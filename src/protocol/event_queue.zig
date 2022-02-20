@@ -199,8 +199,12 @@ pub const DockPacket = struct {
 pub const AppEvent = struct {
     source: EventSource,
     event: AppEventType,
-    length: u16 = undefined,
-    data: [65536]u8 = undefined,
+    length: u32 = undefined,
+    data: *[]u8 = undefined,
+
+    pub fn deinit(self: *const AppEvent, allocator: std.mem.Allocator) void {
+        allocator.destroy(self.data);
+    }
 };
 
 pub const TimerEvent = struct {
@@ -213,6 +217,7 @@ const StackEventType = enum {
     mnp,
     dock,
     timer,
+    app,
 };
 
 pub const StackEvent = union(StackEventType) {
@@ -220,9 +225,11 @@ pub const StackEvent = union(StackEventType) {
     mnp: MnpPacket,
     dock: DockPacket,
     timer: TimerEvent,
+    app: AppEvent,
 
-    pub fn deinit(self: *StackEvent) void {
+    pub fn deinit(self: *StackEvent, allocator: std.mem.Allocator) void {
         switch (self.*) {
+            .app => |app| app.deinit(allocator),
             else => {},
         }
     }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const framing_layer = @import("./protocol/framing_layer.zig");
 const mnp_layer = @import("./protocol/mnp_layer.zig");
 const dock_layer = @import("./protocol/dock_layer.zig");
@@ -28,7 +29,7 @@ fn processStackEvents() !void {
         try mnp_layer.processEvent(event, allocator);
         try dock_layer.processEvent(event, allocator);
         try connect_module.processEvent(event, allocator);
-        event.deinit();
+        event.deinit(allocator);
         allocator.destroy(event);
     }
 }
@@ -46,7 +47,11 @@ fn commandLoop() void {
 }
 
 pub fn main() anyerror!void {
-    file = try std.os.open("/tmp/einstein-extr.pty", std.os.O.RDWR, 0o664);
+    if (builtin.os.tag == .windows) {
+        file = try std.os.open("COM1:", std.os.O.RDWR, 0);
+    } else {
+        file = try std.os.open("/tmp/einstein-extr.pty", std.os.O.RDWR, 0o664);
+    }
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     allocator = gpa.allocator();
 
