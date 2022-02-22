@@ -23,7 +23,7 @@ var allocator: std.mem.Allocator = undefined;
 var file: std.os.fd_t = undefined;
 
 fn processStackEvents() !void {
-    while (event_queue.events.dequeue()) |event| {
+    while (event_queue.dequeue()) |event| {
         log_layer.processEvent(event);
         try framing_layer.processEvent(event, file);
         try mnp_layer.processEvent(event, allocator);
@@ -52,10 +52,11 @@ pub fn main() anyerror!void {
     } else {
         file = try std.os.open("/tmp/einstein-extr.pty", std.os.O.RDWR, 0o664);
     }
+    defer std.os.close(file);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     allocator = gpa.allocator();
 
-    event_queue.events = .{ .allocator = allocator };
+    event_queue.init(allocator);
     var readerThread = try std.Thread.spawn(.{}, framing_layer.readerLoop, .{ file, allocator });
     var commandThread = try std.Thread.spawn(.{}, commandLoop, .{});
     var stackThread = try std.Thread.spawn(.{}, processStackEvents, .{});
@@ -64,6 +65,5 @@ pub fn main() anyerror!void {
     commandThread.join();
     std.log.info("Done.", .{});
     _ = gpa.deinit();
-    std.os.close(file);
     std.os.exit(0);
 }

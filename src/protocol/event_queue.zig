@@ -235,4 +235,32 @@ pub const StackEvent = union(StackEventType) {
     }
 };
 
-pub var events: queue.Queue(*StackEvent) = undefined;
+var events: queue.Queue(*StackEvent) = undefined;
+var mutex: std.Thread.Mutex = undefined;
+var available: std.Thread.Semaphore = undefined;
+
+pub fn init(allocator: std.mem.Allocator) void {
+    events = .{ .allocator = allocator };
+    mutex = .{};
+    available = .{};
+}
+
+pub fn has_available() bool {
+    available.mutex.lock();
+    defer available.mutex.unlock();
+    return available.permits > 0;
+}
+
+pub fn enqueue(event: *StackEvent) !void {
+    mutex.lock();
+    defer mutex.unlock();
+    try events.enqueue(event);
+    available.post();
+}
+
+pub fn dequeue() ?*StackEvent {
+    available.wait();
+    mutex.lock();
+    mutex.unlock();
+    return events.dequeue();
+}

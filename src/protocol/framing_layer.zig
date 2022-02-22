@@ -193,7 +193,7 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
                 };
                 std.mem.copy(u8, &serial_packet.data, packet[0..serial_packet.length]);
                 stack_event.* = .{ .serial = serial_packet };
-                try event_queue.events.enqueue(stack_event);
+                try event_queue.enqueue(stack_event);
             }
         } else |_| {
             break :read_loop;
