@@ -162,48 +162,65 @@ pub const EventSource = enum {
     timer,
 };
 
+const EventDirection = enum {
+    in,
+    out,
+};
+
 pub const SerialPacket = struct {
-    source: EventSource,
-    data: [65536]u8 = undefined,
+    direction: EventDirection,
+    data: []u8 = undefined,
     length: u16 = undefined,
 
     pub fn format(self: SerialPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "{} {}\n", .{ self.source, self.length });
+        try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.length });
         try hexdump.toWriter(self.data[0..self.length], writer);
+    }
+
+    pub fn deinit(self: *const SerialPacket, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
     }
 };
 
 pub const MnpPacket = struct {
-    source: EventSource,
-    data: [65536]u8 = undefined,
+    direction: EventDirection,
+    data: []u8 = undefined,
     length: u16 = undefined,
 
     pub fn format(self: MnpPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "{}\n", .{self.source});
+        try std.fmt.format(writer, "{}\n", .{self.direction});
         try hexdump.toWriter(self.data[0..self.length], writer);
+    }
+
+    pub fn deinit(self: *const MnpPacket, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
     }
 };
 
 pub const DockPacket = struct {
-    source: EventSource,
+    direction: EventDirection,
     command: DockCommand,
-    length: u16 = undefined,
-    data: [65536]u8 = undefined,
+    length: u32 = undefined,
+    data: []u8 = undefined,
 
     pub fn format(self: DockPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.format(writer, "{} {}\n", .{ self.source, self.command });
+        try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.command });
         try hexdump.toWriter(self.data[0..self.length], writer);
+    }
+
+    pub fn deinit(self: *const DockPacket, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
     }
 };
 
 pub const AppEvent = struct {
-    source: EventSource,
+    direction: EventDirection,
     event: AppEventType,
     length: u32 = undefined,
-    data: *[]u8 = undefined,
+    data: []u8 = undefined,
 
     pub fn deinit(self: *const AppEvent, allocator: std.mem.Allocator) void {
-        allocator.destroy(self.data);
+        allocator.free(self.data);
     }
 };
 
@@ -230,6 +247,9 @@ pub const StackEvent = union(StackEventType) {
     pub fn deinit(self: *StackEvent, allocator: std.mem.Allocator) void {
         switch (self.*) {
             .app => |app| app.deinit(allocator),
+            .dock => |dock| dock.deinit(allocator),
+            .mnp => |mnp| mnp.deinit(allocator),
+            .serial => |serial| serial.deinit(allocator),
             else => {},
         }
     }

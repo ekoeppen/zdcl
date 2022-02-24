@@ -62,8 +62,9 @@ fn handleLinkRequest(packet: event_queue.SerialPacket, allocator: std.mem.Alloca
     receive_credit_number = max_outstanding_packets;
     max_info_field = @intCast(u16, packet.data[19]) * 256 + packet.data[20];
     data_phase_opt = packet.data[23];
-    var response: event_queue.SerialPacket = .{ .source = .mnp, .length = 24 };
-    std.mem.copy(u8, &response.data, &.{
+    var response: event_queue.SerialPacket = .{ .direction = .out, .length = 24 };
+    response.data = try allocator.alloc(u8, response.length);
+    std.mem.copy(u8, response.data, &.{
         23, LR, 2, 1, 6, 1, 0, 0, 0,  0, 255, //
         2,  1,  2, 3, 1, 8, 4, 2, 64, 0, 8,
         1,  3,
@@ -75,18 +76,20 @@ fn handleLinkRequest(packet: event_queue.SerialPacket, allocator: std.mem.Alloca
 }
 
 fn sendLinkAcknowledgement(sequence_number: u8, credit: u8, allocator: std.mem.Allocator) !void {
-    var response: event_queue.SerialPacket = .{ .source = .mnp, .length = 4 };
-    std.mem.copy(u8, &response.data, &.{ 3, LA, sequence_number, credit });
+    var response: event_queue.SerialPacket = .{ .direction = .out, .length = 4 };
+    response.data = try allocator.alloc(u8, response.length);
+    std.mem.copy(u8, response.data, &.{ 3, LA, sequence_number, credit });
     var stack_event = try allocator.create(event_queue.StackEvent);
     stack_event.* = .{ .serial = response };
     try event_queue.enqueue(stack_event);
 }
 
 fn handleLinkTransfer(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
-    var mnp_packet: event_queue.MnpPacket = .{ .source = .mnp, .length = packet.length - 3 };
+    var mnp_packet: event_queue.MnpPacket = .{ .direction = .in, .length = packet.length - 3 };
+    mnp_packet.data = try allocator.alloc(u8, mnp_packet.length);
     peer_send_sequence_number = packet.data[2];
     try sendLinkAcknowledgement(peer_send_sequence_number, 8, allocator);
-    std.mem.copy(u8, &mnp_packet.data, packet.data[3..packet.length]);
+    std.mem.copy(u8, mnp_packet.data, packet.data[3..packet.length]);
     var stack_event = try allocator.create(event_queue.StackEvent);
     stack_event.* = .{ .mnp = mnp_packet };
     try event_queue.enqueue(stack_event);
@@ -109,9 +112,6 @@ fn handleLinkAcknowledgement(packet: event_queue.SerialPacket, allocator: std.me
 }
 
 fn processSerial(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
-    if (packet.source != .serial) {
-        return;
-    }
     if (mnp_fsm.input(packet.data[1])) |action| {
         switch (action) {
             .handle_link_request => try handleLinkRequest(packet, allocator),
@@ -124,9 +124,10 @@ fn processSerial(packet: event_queue.SerialPacket, allocator: std.mem.Allocator)
 
 fn sendLinkTransfer(data: []const u8, allocator: std.mem.Allocator) !void {
     var serial_packet: event_queue.SerialPacket = .{
-        .source = .mnp,
+        .direction = .out,
         .length = @truncate(u16, data.len + 3),
     };
+    serial_packet.data = try allocator.alloc(u8, serial_packet.length);
     std.mem.copy(u8, serial_packet.data[0..3], &.{ 2, LT, local_send_sequence_number });
     std.mem.copy(u8, serial_packet.data[3..serial_packet.length], data);
     local_send_sequence_number +%= 1;
@@ -141,9 +142,6 @@ fn sendLinkTransfer(data: []const u8, allocator: std.mem.Allocator) !void {
 }
 
 fn processMnp(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
-    if (packet.source != .dock) {
-        return;
-    }
     var offset: usize = 0;
     var remaining: usize = packet.length;
     while (remaining > 0) {
@@ -156,8 +154,8 @@ fn processMnp(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void
 
 pub fn processEvent(event: *event_queue.StackEvent, allocator: std.mem.Allocator) !void {
     switch (event.*) {
-        .serial => try processSerial(event.serial, allocator),
-        .mnp => try processMnp(event.mnp, allocator),
+        .serial => |serial| if (serial.direction == .in) try processSerial(serial, allocator),
+        .mnp => |mnp| if (mnp.direction == .out) try processMnp(mnp, allocator),
         else => {},
     }
 }

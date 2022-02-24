@@ -188,10 +188,11 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
                 std.debug.print("\n", .{});
                 var stack_event = try allocator.create(event_queue.StackEvent);
                 var serial_packet: event_queue.SerialPacket = .{
-                    .source = .serial,
+                    .direction = .in,
                     .length = packet_length,
                 };
-                std.mem.copy(u8, &serial_packet.data, packet[0..serial_packet.length]);
+                serial_packet.data = try allocator.alloc(u8, serial_packet.length);
+                std.mem.copy(u8, serial_packet.data, packet[0..serial_packet.length]);
                 stack_event.* = .{ .serial = serial_packet };
                 try event_queue.enqueue(stack_event);
             }
@@ -203,7 +204,7 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
 
 pub fn processEvent(event: *event_queue.StackEvent, file: std.os.fd_t) !void {
     switch (event.*) {
-        .serial => |serial| if (serial.source == .mnp) {
+        .serial => |serial| if (serial.direction == .out) {
             try write(&serial, file);
         },
         else => {},
