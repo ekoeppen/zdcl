@@ -167,14 +167,26 @@ const EventDirection = enum {
     out,
 };
 
+fn setPacketData(comptime T: type, packet: *T, data: []const u8, allocator: std.mem.Allocator) !void {
+    packet.length = @truncate(u32, data.len);
+    packet.data = try allocator.alloc(u8, packet.length);
+    std.mem.copy(u8, packet.data, data);
+}
+
 pub const SerialPacket = struct {
     direction: EventDirection,
     data: []u8 = undefined,
-    length: u16 = undefined,
+    length: u32 = undefined,
 
     pub fn format(self: SerialPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.length });
         try hexdump.toWriter(self.data[0..self.length], writer);
+    }
+
+    pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !SerialPacket {
+        var packet: SerialPacket = .{ .direction = direction };
+        try setPacketData(SerialPacket, &packet, data, allocator);
+        return packet;
     }
 
     pub fn deinit(self: *const SerialPacket, allocator: std.mem.Allocator) void {
@@ -185,11 +197,17 @@ pub const SerialPacket = struct {
 pub const MnpPacket = struct {
     direction: EventDirection,
     data: []u8 = undefined,
-    length: u16 = undefined,
+    length: u32 = undefined,
 
     pub fn format(self: MnpPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "{}\n", .{self.direction});
         try hexdump.toWriter(self.data[0..self.length], writer);
+    }
+
+    pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+        var packet: MnpPacket = .{ .direction = direction };
+        try setPacketData(MnpPacket, &packet, data, allocator);
+        return packet;
     }
 
     pub fn deinit(self: *const MnpPacket, allocator: std.mem.Allocator) void {
@@ -208,6 +226,12 @@ pub const DockPacket = struct {
         try hexdump.toWriter(self.data[0..self.length], writer);
     }
 
+    pub fn init(command: DockCommand, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+        var packet: DockPacket = .{ .direction = direction, .command = command };
+        try setPacketData(DockPacket, &packet, data, allocator);
+        return packet;
+    }
+
     pub fn deinit(self: *const DockPacket, allocator: std.mem.Allocator) void {
         allocator.free(self.data);
     }
@@ -218,6 +242,12 @@ pub const AppEvent = struct {
     event: AppEventType,
     length: u32 = undefined,
     data: []u8 = undefined,
+
+    pub fn init(event: AppEventType, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+        var packet: AppEvent = .{ .direction = direction, .event = event };
+        try setPacketData(AppEvent, &packet, data, allocator);
+        return packet;
+    }
 
     pub fn deinit(self: *const AppEvent, allocator: std.mem.Allocator) void {
         allocator.free(self.data);
@@ -244,18 +274,18 @@ pub const StackEvent = union(StackEventType) {
     timer: TimerEvent,
     app: AppEvent,
 
-    pub fn deinit(self: *StackEvent, allocator: std.mem.Allocator) void {
-        switch (self.*) {
+    pub fn deinit(self: StackEvent, allocator: std.mem.Allocator) void {
+        switch (self) {
             .app => |app| app.deinit(allocator),
             .dock => |dock| dock.deinit(allocator),
             .mnp => |mnp| mnp.deinit(allocator),
             .serial => |serial| serial.deinit(allocator),
-            else => {},
+            .timer => {},
         }
     }
 };
 
-var events: queue.Queue(*StackEvent) = undefined;
+var events: queue.Queue(StackEvent) = undefined;
 var mutex: std.Thread.Mutex = undefined;
 var available: std.Thread.Semaphore = undefined;
 
@@ -271,14 +301,14 @@ pub fn has_available() bool {
     return available.permits > 0;
 }
 
-pub fn enqueue(event: *StackEvent) !void {
+pub fn enqueue(event: StackEvent) !void {
     mutex.lock();
     defer mutex.unlock();
     try events.enqueue(event);
     available.post();
 }
 
-pub fn dequeue() ?*StackEvent {
+pub fn dequeue() ?StackEvent {
     available.wait();
     mutex.lock();
     mutex.unlock();

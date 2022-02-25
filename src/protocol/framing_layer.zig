@@ -186,15 +186,13 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
             }
             if (input(serial_buffer[0])) {
                 std.debug.print("\n", .{});
-                var stack_event = try allocator.create(event_queue.StackEvent);
                 var serial_packet: event_queue.SerialPacket = .{
                     .direction = .in,
                     .length = packet_length,
                 };
                 serial_packet.data = try allocator.alloc(u8, serial_packet.length);
                 std.mem.copy(u8, serial_packet.data, packet[0..serial_packet.length]);
-                stack_event.* = .{ .serial = serial_packet };
-                try event_queue.enqueue(stack_event);
+                try event_queue.enqueue(.{ .serial = serial_packet });
             }
         } else |_| {
             break :read_loop;
@@ -202,8 +200,8 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
     }
 }
 
-pub fn processEvent(event: *event_queue.StackEvent, file: std.os.fd_t) !void {
-    switch (event.*) {
+pub fn processEvent(event: event_queue.StackEvent, file: std.os.fd_t) !void {
+    switch (event) {
         .serial => |serial| if (serial.direction == .out) {
             try write(&serial, file);
         },

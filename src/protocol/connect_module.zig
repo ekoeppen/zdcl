@@ -4,6 +4,8 @@ const fsm = @import("../utils/fsm.zig");
 const dock_layer = @import("./dock_layer.zig");
 const des = @import("../utils/des.zig");
 
+const DockPacket = event_queue.DockPacket;
+
 const State = enum {
     idle,
     initiate,
@@ -84,30 +86,16 @@ fn encrypt(in: *[8]u8, out: *[8]u8) void {
     d.crypt(.Encrypt, out, in);
 }
 
-fn handleDockCommand(packet: *const event_queue.DockPacket, allocator: std.mem.Allocator) !void {
+fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
     _ = allocator;
     if (connect_fsm.input(packet.command)) |action| {
         switch (action) {
             .request_to_dock => {
-                var dock_packet: event_queue.DockPacket = .{
-                    .direction = .out,
-                    .command = .dock,
-                    .length = 4,
-                    .data = try allocator.alloc(u8, 4),
-                };
-                std.mem.copy(u8, dock_packet.data, &.{ 0, 0, 0, 1 });
-                var stack_event = try allocator.create(event_queue.StackEvent);
-                stack_event.* = .{ .dock = dock_packet };
-                try event_queue.enqueue(stack_event);
+                var dock_packet = try DockPacket.init(.dock, .out, &.{ 0, 0, 0, 1 }, allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .desktop_info => {
-                var dock_packet: event_queue.DockPacket = .{
-                    .direction = .out,
-                    .command = .desktop_info,
-                    .length = 110,
-                    .data = try allocator.alloc(u8, 110),
-                };
-                std.mem.copy(u8, dock_packet.data, &.{
+                var dock_packet = try DockPacket.init(.desktop_info, .out, &.{
                     0, 0, 0, protocol_version, //
                     0, 0, 0, desktop_mac, //
                     0x64, 0x23, 0xef, 0x02, //
@@ -125,58 +113,32 @@ fn handleDockCommand(packet: *const event_queue.DockPacket, allocator: std.mem.A
                     0x00, 0x55, 0x00, 0x74, 0x00, 0x69, 0x00, 0x6c,
                     0x00, 0x69, 0x00, 0x74, 0x00, 0x69, 0x00, 0x65,
                     0x00, 0x73, 0x00, 0x00, 0x00, 0x04,
-                });
-                var stack_event = try allocator.create(event_queue.StackEvent);
-                stack_event.* = .{ .dock = dock_packet };
-                try event_queue.enqueue(stack_event);
+                }, allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .which_icons => {
                 std.mem.copy(u8, challenge[0..8], packet.data[8..16]);
-                var dock_packet: event_queue.DockPacket = .{
-                    .direction = .out,
-                    .command = .which_icons,
-                    .length = 4,
-                    .data = try allocator.alloc(u8, 4),
-                };
-                std.mem.copy(u8, dock_packet.data, &.{ 0, 0, 0, all_icons });
-                var stack_event = try allocator.create(event_queue.StackEvent);
-                stack_event.* = .{ .dock = dock_packet };
-                try event_queue.enqueue(stack_event);
+                var dock_packet = try DockPacket.init(.which_icons, .out, &.{ 0, 0, 0, all_icons }, allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .set_timeout => {
-                var dock_packet: event_queue.DockPacket = .{
-                    .direction = .out,
-                    .command = .set_timeout,
-                    .length = 4,
-                    .data = try allocator.alloc(u8, 4),
-                };
-                std.mem.copy(u8, dock_packet.data, &.{ 0, 0, 0, dock_timeout });
-                var stack_event = try allocator.create(event_queue.StackEvent);
-                stack_event.* = .{ .dock = dock_packet };
-                try event_queue.enqueue(stack_event);
+                var dock_packet = try DockPacket.init(.set_timeout, .out, &.{ 0, 0, 0, dock_timeout }, allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .password => {
                 var response: [8]u8 = undefined;
                 encrypt(&challenge, &response);
-                var dock_packet: event_queue.DockPacket = .{
-                    .direction = .out,
-                    .command = .password,
-                    .length = 8,
-                    .data = try allocator.alloc(u8, 8),
-                };
-                std.mem.copy(u8, dock_packet.data, response[0..8]);
-                var stack_event = try allocator.create(event_queue.StackEvent);
-                stack_event.* = .{ .dock = dock_packet };
-                try event_queue.enqueue(stack_event);
+                var dock_packet = try DockPacket.init(.password, .out, response[0..8], allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .disconnect => {},
         }
     }
 }
 
-pub fn processEvent(event: *event_queue.StackEvent, allocator: std.mem.Allocator) !void {
-    switch (event.*) {
-        .dock => |packet| if (packet.direction == .in) try handleDockCommand(&packet, allocator),
+pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
+    switch (event) {
+        .dock => |packet| if (packet.direction == .in) try handleDockCommand(packet, allocator),
         else => {},
     }
 }

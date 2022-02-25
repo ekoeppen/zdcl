@@ -69,9 +69,7 @@ fn handleLinkRequest(packet: event_queue.SerialPacket, allocator: std.mem.Alloca
         2,  1,  2, 3, 1, 8, 4, 2, 64, 0, 8,
         1,  3,
     });
-    var stack_event = try allocator.create(event_queue.StackEvent);
-    stack_event.* = .{ .serial = response };
-    try event_queue.enqueue(stack_event);
+    try event_queue.enqueue(.{ .serial = response });
     backlog = .{ .allocator = allocator };
 }
 
@@ -79,9 +77,7 @@ fn sendLinkAcknowledgement(sequence_number: u8, credit: u8, allocator: std.mem.A
     var response: event_queue.SerialPacket = .{ .direction = .out, .length = 4 };
     response.data = try allocator.alloc(u8, response.length);
     std.mem.copy(u8, response.data, &.{ 3, LA, sequence_number, credit });
-    var stack_event = try allocator.create(event_queue.StackEvent);
-    stack_event.* = .{ .serial = response };
-    try event_queue.enqueue(stack_event);
+    try event_queue.enqueue(.{ .serial = response });
 }
 
 fn handleLinkTransfer(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
@@ -90,20 +86,16 @@ fn handleLinkTransfer(packet: event_queue.SerialPacket, allocator: std.mem.Alloc
     peer_send_sequence_number = packet.data[2];
     try sendLinkAcknowledgement(peer_send_sequence_number, 8, allocator);
     std.mem.copy(u8, mnp_packet.data, packet.data[3..packet.length]);
-    var stack_event = try allocator.create(event_queue.StackEvent);
-    stack_event.* = .{ .mnp = mnp_packet };
-    try event_queue.enqueue(stack_event);
+    try event_queue.enqueue(.{ .mnp = mnp_packet });
 }
 
-fn handleLinkAcknowledgement(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
+fn handleLinkAcknowledgement(packet: event_queue.SerialPacket) !void {
     peer_receive_sequence_number = packet.data[2];
     receive_credit_number += packet.data[3];
     if (receive_credit_number > 8) receive_credit_number = 8;
     send_backlog: while (receive_credit_number > 0) {
         if (backlog.dequeue()) |serial_packet| {
-            var stack_event = try allocator.create(event_queue.StackEvent);
-            stack_event.* = .{ .serial = serial_packet };
-            try event_queue.enqueue(stack_event);
+            try event_queue.enqueue(.{ .serial = serial_packet });
             receive_credit_number -|= 1;
         } else {
             break :send_backlog;
@@ -116,7 +108,7 @@ fn processSerial(packet: event_queue.SerialPacket, allocator: std.mem.Allocator)
         switch (action) {
             .handle_link_request => try handleLinkRequest(packet, allocator),
             .handle_link_transfer => try handleLinkTransfer(packet, allocator),
-            .handle_link_acknowledgement => try handleLinkAcknowledgement(packet, allocator),
+            .handle_link_acknowledgement => try handleLinkAcknowledgement(packet),
             .close_connection => std.os.exit(0),
         }
     }
@@ -132,9 +124,7 @@ fn sendLinkTransfer(data: []const u8, allocator: std.mem.Allocator) !void {
     std.mem.copy(u8, serial_packet.data[3..serial_packet.length], data);
     local_send_sequence_number +%= 1;
     if (receive_credit_number > 0) {
-        var stack_event = try allocator.create(event_queue.StackEvent);
-        stack_event.* = .{ .serial = serial_packet };
-        try event_queue.enqueue(stack_event);
+        try event_queue.enqueue(.{ .serial = serial_packet });
         receive_credit_number -|= 1;
     } else {
         try backlog.enqueue(serial_packet);
@@ -152,8 +142,8 @@ fn processMnp(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void
     }
 }
 
-pub fn processEvent(event: *event_queue.StackEvent, allocator: std.mem.Allocator) !void {
-    switch (event.*) {
+pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
+    switch (event) {
         .serial => |serial| if (serial.direction == .in) try processSerial(serial, allocator),
         .mnp => |mnp| if (mnp.direction == .out) try processMnp(mnp, allocator),
         else => {},

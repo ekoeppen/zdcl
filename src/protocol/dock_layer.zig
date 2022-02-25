@@ -1,7 +1,7 @@
 const std = @import("std");
 const event_queue = @import("./event_queue.zig");
 
-fn handleIncomingPacket(packet: *const event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
+fn handleIncomingPacket(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
     var command: event_queue.DockPacket = .{
         .direction = .in,
         .length = packet.length - 12,
@@ -9,12 +9,10 @@ fn handleIncomingPacket(packet: *const event_queue.MnpPacket, allocator: std.mem
         .data = try allocator.alloc(u8, packet.length - 12),
     };
     std.mem.copy(u8, command.data, packet.data[12..packet.length]);
-    var stack_event = try allocator.create(event_queue.StackEvent);
-    stack_event.* = .{ .dock = command };
-    try event_queue.enqueue(stack_event);
+    try event_queue.enqueue(.{ .dock = command });
 }
 
-pub fn handleOutgoingPacket(packet: *const event_queue.DockPacket, allocator: std.mem.Allocator) !void {
+pub fn handleOutgoingPacket(packet: event_queue.DockPacket, allocator: std.mem.Allocator) !void {
     var payload_length: u16 = @truncate(u16, packet.length + 16);
     var mnp_packet: event_queue.MnpPacket = .{
         .direction = .out,
@@ -25,15 +23,13 @@ pub fn handleOutgoingPacket(packet: *const event_queue.DockPacket, allocator: st
     std.mem.writeInt(u32, mnp_packet.data[8..12], @enumToInt(packet.command), .Big);
     std.mem.writeInt(u32, mnp_packet.data[12..16], packet.length, .Big);
     std.mem.copy(u8, mnp_packet.data[16..payload_length], packet.data[0..packet.length]);
-    var stack_event = try allocator.create(event_queue.StackEvent);
-    stack_event.* = .{ .mnp = mnp_packet };
-    try event_queue.enqueue(stack_event);
+    try event_queue.enqueue(.{ .mnp = mnp_packet });
 }
 
-pub fn processEvent(event: *event_queue.StackEvent, allocator: std.mem.Allocator) !void {
-    switch (event.*) {
-        .mnp => |packet| if (packet.direction == .in) try handleIncomingPacket(&packet, allocator),
-        .dock => |packet| if (packet.direction == .out) try handleOutgoingPacket(&packet, allocator),
+pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
+    switch (event) {
+        .mnp => |packet| if (packet.direction == .in) try handleIncomingPacket(packet, allocator),
+        .dock => |packet| if (packet.direction == .out) try handleOutgoingPacket(packet, allocator),
         else => {},
     }
 }

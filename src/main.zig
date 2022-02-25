@@ -9,7 +9,7 @@ const event_queue = @import("./protocol/event_queue.zig");
 const LogLayer = struct {
     enabled: bool = true,
 
-    fn processEvent(self: *LogLayer, event: *event_queue.StackEvent) void {
+    fn processEvent(self: *LogLayer, event: event_queue.StackEvent) void {
         if (!self.enabled) {
             return;
         }
@@ -30,7 +30,6 @@ fn processStackEvents() !void {
         try dock_layer.processEvent(event, allocator);
         try connect_module.processEvent(event, allocator);
         event.deinit(allocator);
-        allocator.destroy(event);
     }
 }
 
