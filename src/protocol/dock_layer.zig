@@ -2,13 +2,7 @@ const std = @import("std");
 const event_queue = @import("./event_queue.zig");
 
 fn handleIncomingPacket(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
-    var command: event_queue.DockPacket = .{
-        .direction = .in,
-        .length = packet.length - 12,
-        .command = @intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)),
-        .data = try allocator.alloc(u8, packet.length - 12),
-    };
-    std.mem.copy(u8, command.data, packet.data[12..packet.length]);
+    var command = try event_queue.DockPacket.init(@intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)), .in, packet.data[12..packet.length], allocator);
     try event_queue.enqueue(.{ .dock = command });
 }
 

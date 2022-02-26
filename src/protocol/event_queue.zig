@@ -204,7 +204,7 @@ pub const MnpPacket = struct {
         try hexdump.toWriter(self.data[0..self.length], writer);
     }
 
-    pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+    pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !MnpPacket {
         var packet: MnpPacket = .{ .direction = direction };
         try setPacketData(MnpPacket, &packet, data, allocator);
         return packet;

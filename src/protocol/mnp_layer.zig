@@ -3,6 +3,9 @@ const fsm = @import("../utils/fsm.zig");
 const queue = @import("../utils/queue.zig");
 const event_queue = @import("./event_queue.zig");
 
+const SerialPacket = event_queue.SerialPacket;
+const MnpPacket = event_queue.MnpPacket;
+
 const State = enum {
     idle,
     data_phase,
@@ -30,7 +33,7 @@ var max_outstanding_packets: u8 = undefined;
 var max_info_field: u16 = undefined;
 var data_phase_opt: u8 = undefined;
 
-var backlog: queue.Queue(event_queue.SerialPacket) = undefined;
+var backlog: queue.Queue(SerialPacket) = undefined;
 
 var mnp_fsm: fsm.Fsm(u8, State, Action) = .{
     .state = .idle,
@@ -56,40 +59,34 @@ var mnp_fsm: fsm.Fsm(u8, State, Action) = .{
     },
 };
 
-fn handleLinkRequest(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
+fn handleLinkRequest(packet: SerialPacket, allocator: std.mem.Allocator) !void {
     framing_mode = packet.data[13];
     max_outstanding_packets = packet.data[16];
     receive_credit_number = max_outstanding_packets;
     max_info_field = @intCast(u16, packet.data[19]) * 256 + packet.data[20];
     data_phase_opt = packet.data[23];
-    var response: event_queue.SerialPacket = .{ .direction = .out, .length = 24 };
-    response.data = try allocator.alloc(u8, response.length);
-    std.mem.copy(u8, response.data, &.{
+    var response = try SerialPacket.init(.out, &.{
         23, LR, 2, 1, 6, 1, 0, 0, 0,  0, 255, //
         2,  1,  2, 3, 1, 8, 4, 2, 64, 0, 8,
         1,  3,
-    });
+    }, allocator);
     try event_queue.enqueue(.{ .serial = response });
     backlog = .{ .allocator = allocator };
 }
 
 fn sendLinkAcknowledgement(sequence_number: u8, credit: u8, allocator: std.mem.Allocator) !void {
-    var response: event_queue.SerialPacket = .{ .direction = .out, .length = 4 };
-    response.data = try allocator.alloc(u8, response.length);
-    std.mem.copy(u8, response.data, &.{ 3, LA, sequence_number, credit });
+    var response = try SerialPacket.init(.out, &.{ 3, LA, sequence_number, credit }, allocator);
     try event_queue.enqueue(.{ .serial = response });
 }
 
-fn handleLinkTransfer(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
-    var mnp_packet: event_queue.MnpPacket = .{ .direction = .in, .length = packet.length - 3 };
-    mnp_packet.data = try allocator.alloc(u8, mnp_packet.length);
+fn handleLinkTransfer(packet: SerialPacket, allocator: std.mem.Allocator) !void {
+    var mnp_packet = try MnpPacket.init(.in, packet.data[3..packet.length], allocator);
+    try event_queue.enqueue(.{ .mnp = mnp_packet });
     peer_send_sequence_number = packet.data[2];
     try sendLinkAcknowledgement(peer_send_sequence_number, 8, allocator);
-    std.mem.copy(u8, mnp_packet.data, packet.data[3..packet.length]);
-    try event_queue.enqueue(.{ .mnp = mnp_packet });
 }
 
-fn handleLinkAcknowledgement(packet: event_queue.SerialPacket) !void {
+fn handleLinkAcknowledgement(packet: SerialPacket) !void {
     peer_receive_sequence_number = packet.data[2];
     receive_credit_number += packet.data[3];
     if (receive_credit_number > 8) receive_credit_number = 8;
@@ -103,7 +100,7 @@ fn handleLinkAcknowledgement(packet: event_queue.SerialPacket) !void {
     }
 }
 
-fn processSerial(packet: event_queue.SerialPacket, allocator: std.mem.Allocator) !void {
+fn processSerial(packet: SerialPacket, allocator: std.mem.Allocator) !void {
     if (mnp_fsm.input(packet.data[1])) |action| {
         switch (action) {
             .handle_link_request => try handleLinkRequest(packet, allocator),
@@ -115,7 +112,7 @@ fn processSerial(packet: event_queue.SerialPacket, allocator: std.mem.Allocator)
 }
 
 fn sendLinkTransfer(data: []const u8, allocator: std.mem.Allocator) !void {
-    var serial_packet: event_queue.SerialPacket = .{
+    var serial_packet: SerialPacket = .{
         .direction = .out,
         .length = @truncate(u16, data.len + 3),
     };
@@ -131,7 +128,7 @@ fn sendLinkTransfer(data: []const u8, allocator: std.mem.Allocator) !void {
     }
 }
 
-fn processMnp(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
+fn processMnp(packet: MnpPacket, allocator: std.mem.Allocator) !void {
     var offset: usize = 0;
     var remaining: usize = packet.length;
     while (remaining > 0) {
