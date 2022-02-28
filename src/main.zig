@@ -5,120 +5,67 @@ const mnp_layer = @import("./protocol/mnp_layer.zig");
 const dock_layer = @import("./protocol/dock_layer.zig");
 const connect_module = @import("./protocol/connect_module.zig");
 const event_queue = @import("./protocol/event_queue.zig");
+const args = @import("./utils/args.zig");
 
-const Arg = struct {
-    short: ?[]const u8 = null,
-    long: ?[]const u8 = null,
-    help: ?[]const u8 = null,
-    value: union(enum) {
-        present: bool,
-        number: i32,
-        boolean: bool,
-        string: []u8,
-    } = .{ .present = false },
-
-    fn matches(self: *Arg, parameter: []const u8) bool {
-        if (self.short) |short| {
-            if (std.mem.eql(u8, short, parameter)) return true;
-        }
-        if (self.long) |long| {
-            if (std.mem.eql(u8, long, parameter)) return true;
-        }
-        return false;
-    }
-
-    fn setFromIter(self: *Arg, iter: *std.process.ArgIterator, allocator: std.mem.Allocator) !void {
-        switch (self.value) {
-            .number => {
-                var arg = try iter.next(allocator) orelse {
-                    std.log.err("Missing argument for {s} {s}", .{ self.short, self.long });
-                    return error.InvalidArgs;
-                };
-                defer allocator.free(arg);
-                self.value = .{ .number = try std.fmt.parseInt(i32, arg, 10) };
-            },
-            .string => {
-                var arg = try iter.next(allocator) orelse {
-                    std.log.err("Missing argument for {s} {s}", .{ self.short, self.long });
-                    return error.InvalidArgs;
-                };
-                self.value = .{ .string = arg };
-            },
-            .boolean => self.value = .{ .boolean = true },
-            .present => self.value = .{ .present = true },
-        }
-    }
+const Command = union(enum) {
+    load: struct { file: []const u8 },
+    info: bool,
+    sync: bool,
+    soup_export: struct { soup: []const u8, file: []const u8 },
 };
 
-var args: [3]Arg = .{ //
-    .{ .short = "-h", .long = "--help-package", .help = "Show help" },
-    .{ .short = "-l", .long = "--load-package", .help = "Load package", .value = .{ .string = "" } },
-    .{
-        .short = "-t",
-        .long = "--timeout",
-        .help = "Connection timeout in seconds",
-        .value = .{ .number = 15 },
-    },
+var command: Command = .{ .info = true };
+
+const port_arg: args.Arg = .{
+    .name = "port",
+    .short = "-p",
+    .long = "--port",
+    .help = "Serial port",
+    .value = .{ .string = "" },
 };
 
-var named_args = .{
-    .help = Arg{ //
-        .short = "-h",
-        .long = "--help-package",
-        .help = "Show help",
-    },
-    .load_package = Arg{ //
-        .short = "-l",
-        .long = "--load-package",
-        .help = "Load package",
-        .value = .{ .string = "" },
-    },
-    .timeout = Arg{ //
-        .short = "-t",
-        .long = "--timeout",
-        .help = "Connection timeout in seconds",
-        .value = .{ .number = 15 },
-    },
+const speed_arg: args.Arg = .{
+    .name = "speed",
+    .short = "-s",
+    .long = "--speed",
+    .help = "Serial speed",
+    .value = .{ .number = 115200 },
 };
 
-fn processArgs(allocator: std.mem.Allocator) !void {
-    var iter = std.process.args();
-    parse_args: while (true) {
-        var arg = try iter.next(allocator) orelse {
-            break :parse_args;
-        };
-        var i: usize = 0;
-        while (i < args.len) : (i += 1) {
-            if (args[i].matches(arg)) {
-                try args[i].setFromIter(&iter, allocator);
-                continue :parse_args;
-            }
-        }
-        allocator.free(arg);
-    }
-}
+const help_arg: args.Arg = .{
+    .name = "help",
+    .short = "-h",
+    .long = "--help",
+    .help = "Show help",
+};
 
-fn processNamedArgs(allocator: std.mem.Allocator) !void {
-    var iter = std.process.args();
-    parse_args: while (true) {
-        var arg = try iter.next(allocator) orelse {
-            break :parse_args;
-        };
-        inline for (@typeInfo(@TypeOf(named_args)).Struct.fields) |field| {
-            var named_arg: *Arg = &@field(named_args, field.name);
-            if (named_arg.matches(arg)) {
-                try Arg.setFromIter(named_arg, &iter, allocator);
-                continue :parse_args;
-            }
-        }
-        allocator.free(arg);
-    }
-}
+const load_cli_command: args.Command = .{
+    .name = "load",
+    .help = "Load package",
+    .args = .{},
+};
+
+const info_cli_command: args.Command = .{
+    .name = "info",
+    .help = "Get Newton information",
+    .args = .{},
+};
+
+const common_args = .{
+    .help = help_arg,
+    .port = port_arg,
+    .speed = speed_arg,
+};
+
+const cli_commands = .{
+    .info = info_cli_command,
+    .load = load_cli_command,
+};
 
 const LogLayer = struct {
     enabled: bool = true,
 
-    fn processEvent(self: *LogLayer, event: event_queue.StackEvent) void {
+    fn processEvent(self: *const LogLayer, event: event_queue.StackEvent) void {
         if (!self.enabled) {
             return;
         }
@@ -127,7 +74,7 @@ const LogLayer = struct {
     }
 };
 
-var log_layer = LogLayer{};
+const log_layer = LogLayer{};
 
 fn processStackEvents(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
     while (event_queue.dequeue()) |event| {
@@ -136,6 +83,9 @@ fn processStackEvents(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
         try mnp_layer.processEvent(event, allocator);
         try dock_layer.processEvent(event, allocator);
         try connect_module.processEvent(event, allocator);
+        switch (command) {
+            else => {},
+        }
         event.deinit(allocator);
     }
 }
@@ -152,20 +102,30 @@ fn commandLoop() void {
     }
 }
 
+fn openPort(arg: ?args.Arg) !std.os.fd_t {
+    var port = if (arg) |a| a.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
+    return try std.os.open(port, std.os.O.RDWR, 0);
+}
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    try processNamedArgs(arena.allocator());
-    std.log.info("{s}", .{named_args.load_package.value.string});
-    std.log.info("{d}", .{named_args.timeout.value.number});
+    var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
 
-    var file: std.os.fd_t = undefined;
-    if (builtin.os.tag == .windows) {
-        file = try std.os.open("COM1:", std.os.O.RDWR, 0);
-    } else {
-        file = try std.os.open("/tmp/einstein-extr.pty", std.os.O.RDWR, 0o664);
+    if (parsed_args.args.get("help")) |_| {
+        std.log.info("Usage...", .{});
+        std.os.exit(0);
     }
+
+    var file = try openPort(parsed_args.args.get("port"));
     defer std.os.close(file);
+
+    if (std.mem.eql(u8, parsed_args.command, info_cli_command.name)) {
+        command = .{ .info = true };
+    } else if (std.mem.eql(u8, parsed_args.command, load_cli_command.name)) {
+        command = .{ .load = .{ .file = parsed_args.parameters.items[0] } };
+    }
+    std.log.info("{s}", .{command});
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();

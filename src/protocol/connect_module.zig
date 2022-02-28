@@ -25,8 +25,19 @@ const Action = enum {
     disconnect,
 };
 
-const session_none: u8 = 0;
-const session_setting_up: u8 = 1;
+const SessionType = enum(u8) {
+    none = 0,
+    setting_up = 1,
+    synchronize = 2,
+    restore = 3,
+    load_package = 4,
+    test_comm = 5,
+    load_patch = 6,
+    updating_stores = 7,
+};
+
+pub var session_type: SessionType = .none;
+
 const desktop_mac: u8 = 0;
 const protocol_version: u8 = 10;
 const all_icons: u8 = 63;
@@ -34,7 +45,7 @@ const dock_timeout: u8 = 5;
 
 var challenge: [8]u8 = undefined;
 
-var connect_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
+var generic_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     .state = .idle,
     .transitions = &.{
         .{
@@ -81,14 +92,49 @@ var connect_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     },
 };
 
+var session_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
+    .state = .idle,
+    .transitions = &.{
+        .{
+            .state = .idle,
+            .actions = &.{
+                .{ .event = .request_to_dock, .action = .request_to_dock, .new_state = .initiate },
+            },
+        },
+        .{
+            .state = .initiate,
+            .actions = &.{
+                .{ .event = .newton_name, .action = .set_timeout, .new_state = .set_timeout },
+            },
+        },
+        .{
+            .state = .set_timeout,
+            .actions = &.{
+                .{ .event = .password, .action = .password, .new_state = .up },
+            },
+        },
+        .{
+            .state = .up,
+            .actions = &.{
+                .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
+            },
+        },
+        .{
+            .actions = &.{
+                .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
+            },
+        },
+    },
+};
+
 fn encrypt(in: *[8]u8, out: *[8]u8) void {
     var d: des.DES = des.DES.init(.{ 0xe4, 0x0f, 0x7e, 0x9f, 0x0a, 0x36, 0x2c, 0xfa });
     d.crypt(.Encrypt, out, in);
 }
 
 fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
-    _ = allocator;
-    if (connect_fsm.input(packet.command)) |action| {
+    var active_fsm = if (session_type == .none) &generic_fsm else &session_fsm;
+    if (active_fsm.input(packet.command)) |action| {
         switch (action) {
             .request_to_dock => {
                 var dock_packet = try DockPacket.init(.dock, .out, &.{ 0, 0, 0, 1 }, allocator);
@@ -100,7 +146,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                     0, 0, 0, desktop_mac, //
                     0x64, 0x23, 0xef, 0x02, //
                     0xfb, 0xcd, 0xc5, 0xa5, //
-                    0, 0, 0, session_setting_up, //
+                    0, 0, 0, @enumToInt(SessionType.setting_up), //
                     0, 0, 0, 1, //
                     0x02, 0x05, 0x01, 0x06, 0x03, 0x07, 0x02, 0x69, //
                     0x64, 0x07, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x07,
