@@ -61,10 +61,10 @@ var mnp_fsm: fsm.Fsm(u8, State, Action) = .{
 
 fn handleLinkRequest(packet: SerialPacket, allocator: std.mem.Allocator) !void {
     framing_mode = packet.data[13];
-    max_outstanding_packets = packet.data[16];
+    max_outstanding_packets = 1;
     receive_credit_number = max_outstanding_packets;
-    max_info_field = @intCast(u16, packet.data[19]) * 256 + packet.data[20];
     data_phase_opt = packet.data[23];
+    max_info_field = if (data_phase_opt & 1 == 1) 256 else @intCast(u16, packet.data[19]) * 256 + packet.data[20];
     var response = try SerialPacket.init(.out, &.{
         23, LR, 2, 1, 6, 1, 0, 0, 0,  0, 255, //
         2,  1,  2, 3, 1, 8, 4, 2, 64, 0, 8,
@@ -88,8 +88,8 @@ fn handleLinkTransfer(packet: SerialPacket, allocator: std.mem.Allocator) !void 
 
 fn handleLinkAcknowledgement(packet: SerialPacket) !void {
     peer_receive_sequence_number = packet.data[2];
-    receive_credit_number += packet.data[3];
-    if (receive_credit_number > 8) receive_credit_number = 8;
+    receive_credit_number = packet.data[3];
+    if (receive_credit_number > max_outstanding_packets) receive_credit_number = max_outstanding_packets;
     send_backlog: while (receive_credit_number > 0) {
         if (backlog.dequeue()) |serial_packet| {
             try event_queue.enqueue(.{ .serial = serial_packet });

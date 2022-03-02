@@ -57,6 +57,7 @@ pub const DockCommand = enum(u32) {
     restore_patch = 0x72706174,
     operation_done = 0x6f70646e,
     operation_canceled = 0x6f70636e,
+    op_canceled_ack_2 = 0x6f706361,
     op_canceled_ack = 0x6f636161,
     ref_test = 0x72747374,
     unknown_command = 0x756e6b6e,
@@ -243,7 +244,12 @@ pub const AppEvent = struct {
     length: u32 = undefined,
     data: []u8 = undefined,
 
-    pub fn init(event: AppEventType, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+    pub fn format(self: AppEvent, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.event });
+        try hexdump.toWriter(self.data[0..(if (self.length < 64) self.length else 64)], writer);
+    }
+
+    pub fn init(event: AppEventType, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !AppEvent {
         var packet: AppEvent = .{ .direction = direction, .event = event };
         try setPacketData(AppEvent, &packet, data, allocator);
         return packet;

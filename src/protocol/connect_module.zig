@@ -5,6 +5,7 @@ const dock_layer = @import("./dock_layer.zig");
 const des = @import("../utils/des.zig");
 
 const DockPacket = event_queue.DockPacket;
+const AppEvent = event_queue.AppEvent;
 
 const State = enum {
     idle,
@@ -22,6 +23,7 @@ const Action = enum {
     which_icons,
     set_timeout,
     password,
+    connected,
     disconnect,
 };
 
@@ -45,7 +47,7 @@ const dock_timeout: u8 = 5;
 
 var challenge: [8]u8 = undefined;
 
-var generic_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
+var connect_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     .state = .idle,
     .transitions = &.{
         .{
@@ -81,41 +83,7 @@ var generic_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
         .{
             .state = .up,
             .actions = &.{
-                .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
-            },
-        },
-        .{
-            .actions = &.{
-                .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
-            },
-        },
-    },
-};
-
-var session_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
-    .state = .idle,
-    .transitions = &.{
-        .{
-            .state = .idle,
-            .actions = &.{
-                .{ .event = .request_to_dock, .action = .request_to_dock, .new_state = .initiate },
-            },
-        },
-        .{
-            .state = .initiate,
-            .actions = &.{
-                .{ .event = .newton_name, .action = .set_timeout, .new_state = .set_timeout },
-            },
-        },
-        .{
-            .state = .set_timeout,
-            .actions = &.{
-                .{ .event = .password, .action = .password, .new_state = .up },
-            },
-        },
-        .{
-            .state = .up,
-            .actions = &.{
+                .{ .event = .hello, .action = .connected },
                 .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
             },
         },
@@ -133,8 +101,7 @@ fn encrypt(in: *[8]u8, out: *[8]u8) void {
 }
 
 fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
-    var active_fsm = if (session_type == .none) &generic_fsm else &session_fsm;
-    if (active_fsm.input(packet.command)) |action| {
+    if (connect_fsm.input(packet.command)) |action| {
         switch (action) {
             .request_to_dock => {
                 var dock_packet = try DockPacket.init(.dock, .out, &.{ 0, 0, 0, 1 }, allocator);
@@ -177,7 +144,14 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 var dock_packet = try DockPacket.init(.password, .out, response[0..8], allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
-            .disconnect => {},
+            .connected => {
+                var app_event = try AppEvent.init(.connected, .in, &.{}, allocator);
+                try event_queue.enqueue(.{ .app = app_event });
+            },
+            .disconnect => {
+                var app_event = try AppEvent.init(.disconnected, .in, &.{}, allocator);
+                try event_queue.enqueue(.{ .app = app_event });
+            },
         }
     }
 }
