@@ -38,34 +38,28 @@ const help_arg: args.Arg = .{
     .help = "Show help",
 };
 
-const load_cli_command: args.Command = .{
-    .name = "load",
-    .help = "Load package",
-    .args = .{},
-};
-
-const info_cli_command: args.Command = .{
-    .name = "info",
-    .help = "Get Newton information",
-    .args = .{},
-};
-
-const help_cli_command: args.Command = .{
-    .name = "help",
-    .help = "Get general help",
-    .args = .{},
-};
-
 const common_args = .{
     .help = help_arg,
     .port = port_arg,
     .speed = speed_arg,
 };
 
-const cli_commands = .{
-    .help = help_cli_command,
-    .info = info_cli_command,
-    .load = load_cli_command,
+const cli_commands = .{ //
+    .help = .{
+        .name = "help",
+        .help = "Get general help",
+        .args = .{},
+    },
+    .info = .{
+        .name = "info",
+        .help = "Get Newton information",
+        .args = .{},
+    },
+    .load = .{
+        .name = "load",
+        .help = "Load package",
+        .args = .{},
+    },
 };
 
 const LogLayer = struct {
@@ -116,13 +110,13 @@ fn openPort(arg: ?args.Arg) !std.os.fd_t {
 
 fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Command {
     var command: Command = .{ .info = true };
-    if (std.mem.eql(u8, parsed_args.command, help_cli_command.name)) {
+    if (std.mem.eql(u8, parsed_args.command, cli_commands.help.name)) {
         std.log.info("Usage...", .{});
         std.os.exit(0);
-    } else if (std.mem.eql(u8, parsed_args.command, info_cli_command.name)) {
+    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.info.name)) {
         command = .{ .info = true };
         connect_module.session_type = .setting_up;
-    } else if (std.mem.eql(u8, parsed_args.command, load_cli_command.name)) {
+    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.info.name)) {
         const file_name = parsed_args.parameters.items[0];
         const fd = try std.os.open(file_name, std.os.O.RDONLY, 0);
         defer std.os.close(fd);
