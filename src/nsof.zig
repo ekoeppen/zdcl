@@ -43,7 +43,7 @@ const NSObjectTag = enum(u8) { //
     _,
 };
 
-const NSObject = union(enum) {
+const NSObject = union(NSObjectTag) {
     immediate: i32,
     character: u8,
     uniChar: u16,
@@ -225,27 +225,23 @@ fn decodeObject(reader: anytype, allocator: std.mem.Allocator) anyerror!NSObject
 }
 
 fn encodeObject(object: *const NSObject, writer: anytype) anyerror!void {
+    try writer.writeByte(@enumToInt(object.*));
     switch (object.*) {
         .immediate => |o| {
-            try writer.writeByte(0);
             try encodeXlong(o, writer);
         },
         .character => |o| {
-            try writer.writeByte(1);
             try writer.writeByte(o);
         },
         .uniChar => |o| {
-            try writer.writeByte(2);
             try writer.writeIntBig(u16, o);
         },
         .binary => |o| {
-            try writer.writeByte(3);
             try encodeXlong(@intCast(i32, o.data.len), writer);
             try encodeObject(o.class, writer);
             _ = try writer.write(o.data);
         },
         .array => |o| {
-            try writer.writeByte(4);
             try encodeXlong(@intCast(i32, o.slots.len), writer);
             try encodeObject(o.class, writer);
             for (o.slots) |slot| {
@@ -253,14 +249,12 @@ fn encodeObject(object: *const NSObject, writer: anytype) anyerror!void {
             }
         },
         .plainArray => |o| {
-            try writer.writeByte(5);
             try encodeXlong(@intCast(i32, o.len), writer);
             for (o) |slot| {
                 try encodeObject(slot, writer);
             }
         },
         .frame => |o| {
-            try writer.writeByte(6);
             try encodeXlong(@intCast(i32, o.tags.len), writer);
             for (o.tags) |tag| {
                 try encodeObject(tag, writer);
@@ -270,26 +264,20 @@ fn encodeObject(object: *const NSObject, writer: anytype) anyerror!void {
             }
         },
         .symbol => |o| {
-            try writer.writeByte(7);
             try encodeXlong(@intCast(i32, o.len), writer);
             _ = try writer.write(o);
         },
         .string => |o| {
-            try writer.writeByte(8);
             try encodeXlong(@intCast(i32, o.len) * 2, writer);
             for (o) |char| {
                 try writer.writeIntBig(u16, char);
             }
         },
         .precedent => |o| {
-            try writer.writeByte(9);
             try encodeXlong(@intCast(i32, o), writer);
         },
-        .nil => {
-            try writer.writeByte(10);
-        },
+        .nil => {},
         .smallRect => |o| {
-            try writer.writeByte(11);
             try writer.writeByte(o.top);
             try writer.writeByte(o.left);
             try writer.writeByte(o.bottom);
