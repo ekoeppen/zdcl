@@ -3,8 +3,8 @@ const builtin = @import("builtin");
 const framing_layer = @import("./protocol/framing_layer.zig");
 const mnp_layer = @import("./protocol/mnp_layer.zig");
 const dock_layer = @import("./protocol/dock_layer.zig");
-const connect_module = @import("./protocol/connect_module.zig");
-const load_package_module = @import("./protocol/load_package_module.zig");
+const connect_module = @import("./modules/connect_module.zig");
+const load_package_module = @import("./modules/load_package_module.zig");
 const event_queue = @import("./protocol/event_queue.zig");
 const args = @import("./utils/args.zig");
 

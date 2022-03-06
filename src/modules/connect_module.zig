@@ -1,7 +1,7 @@
 const std = @import("std");
-const event_queue = @import("./event_queue.zig");
 const fsm = @import("../utils/fsm.zig");
-const dock_layer = @import("./dock_layer.zig");
+const event_queue = @import("../protocol/event_queue.zig");
+const dock_layer = @import("../protocol/dock_layer.zig");
 const des = @import("../utils/des.zig");
 
 const DockPacket = event_queue.DockPacket;
