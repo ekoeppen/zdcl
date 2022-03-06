@@ -1,0 +1,408 @@
+const std = @import("std");
+const hexdump = @import("../utils/hexdump.zig");
+
+const NSObjectTag = enum(u8) { //
+    immediate = 0,
+    character = 1,
+    uniChar = 2,
+    binary = 3,
+    array = 4,
+    plainArray = 5,
+    frame = 6,
+    symbol = 7,
+    string = 8,
+    precedent = 9,
+    nil = 10,
+    smallRect = 11,
+    _,
+};
+
+pub const NSObject = union(NSObjectTag) {
+    immediate: i32,
+    character: u8,
+    uniChar: u16,
+    binary: struct {
+        class: *const NSObject,
+        data: []const u8,
+    },
+    array: struct {
+        class: *const NSObject,
+        slots: []const *const NSObject,
+    },
+    plainArray: []const *NSObject,
+    frame: struct {
+        tags: []const *const NSObject,
+        slots: []const *const NSObject,
+    },
+    symbol: []const u8,
+    string: []const u16,
+    precedent: i32,
+    nil: u8,
+    smallRect: struct {
+        top: u8,
+        left: u8,
+        bottom: u8,
+        right: u8,
+    },
+
+    pub fn write(self: *const NSObject, writer: anytype) anyerror!void {
+        const f = std.fmt.format;
+        switch (self.*) {
+            .immediate => |o| try f(writer, "imm: {d}", .{o}),
+            .character => |o| try f(writer, "{c}", .{o}),
+            .uniChar => |o| try f(writer, "{d}", .{o}),
+            .binary => |o| {
+                try f(writer, "<", .{});
+                try o.class.write(writer);
+                try f(writer, " ", .{});
+                try f(writer, "{s}", .{o.data});
+                try f(writer, ">", .{});
+            },
+            .array => |o| {
+                try f(writer, "[", .{});
+                try o.class.write(writer);
+                try f(writer, ": ", .{});
+                for (o.slots) |slot| {
+                    try slot.write(writer);
+                    try f(writer, ", ", .{});
+                }
+                try f(writer, "]", .{});
+            },
+            .plainArray => |o| {
+                try f(writer, "[", .{});
+                for (o) |slot| {
+                    try slot.write(writer);
+                    try f(writer, ", ", .{});
+                }
+                try f(writer, "]", .{});
+            },
+            .frame => |o| {
+                try f(writer, "{{", .{});
+                for (o.tags) |_, i| {
+                    try o.tags[i].write(writer);
+                    try f(writer, ": ", .{});
+                    try o.slots[i].write(writer);
+                    try f(writer, ", ", .{});
+                }
+                try f(writer, "}}", .{});
+            },
+            .symbol => |o| try f(writer, "{s}", .{o}),
+            .string => |o| {
+                try f(writer, "\"", .{});
+                for (o) |char| {
+                    try f(writer, "{c}", .{@truncate(u8, char)});
+                }
+                try f(writer, "\"", .{});
+            },
+            .precedent => |o| try f(writer, "prec: {d}", .{o}),
+            .nil => try f(writer, "nil", .{}),
+            .smallRect => |o| try f(writer, "[{d}]", .{o}),
+        }
+    }
+};
+
+fn decodeXlong(reader: anytype) !i32 {
+    var r: i32 = try reader.readByte();
+    if (r < 255) {
+        return r;
+    }
+    r = try reader.readIntBig(i32);
+    return r;
+}
+
+fn encodeXlong(xlong: i32, writer: anytype) !void {
+    if (xlong >= 0 and xlong <= 254) {
+        try writer.writeByte(@intCast(u8, xlong));
+        return;
+    }
+    try writer.writeByte(255);
+    try writer.writeIntBig(i32, xlong);
+}
+
+pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!NSObject {
+    switch (@intToEnum(NSObjectTag, try reader.readByte())) {
+        .immediate => return NSObject{ .immediate = try decodeXlong(reader) },
+        .character => return NSObject{ .character = try reader.readByte() },
+        .uniChar => return NSObject{ .uniChar = try reader.readIntBig(u16) },
+        .binary => {
+            const length = try decodeXlong(reader);
+            var class = try allocator.create(NSObject);
+            class.* = try decode(reader, allocator);
+            var data = try allocator.alloc(u8, @intCast(usize, length));
+            _ = try reader.read(data);
+            return NSObject{ .binary = .{
+                .class = class,
+                .data = data,
+            } };
+        },
+        .array => {
+            const count = try decodeXlong(reader);
+            var class = try allocator.create(NSObject);
+            class.* = try decode(reader, allocator);
+            var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+            for (elements) |_, i| {
+                elements[i] = try allocator.create(NSObject);
+                elements[i].* = try decode(reader, allocator);
+            }
+            return NSObject{ .array = .{ .class = class, .slots = elements } };
+        },
+        .plainArray => {
+            const count = try decodeXlong(reader);
+            var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+            for (elements) |_, i| {
+                elements[i] = try allocator.create(NSObject);
+                elements[i].* = try decode(reader, allocator);
+            }
+            return NSObject{ .plainArray = elements };
+        },
+        .frame => {
+            const count = try decodeXlong(reader);
+            var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
+            var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
+            for (tags) |_, i| {
+                tags[i] = try allocator.create(NSObject);
+                tags[i].* = try decode(reader, allocator);
+            }
+            for (slots) |_, i| {
+                slots[i] = try allocator.create(NSObject);
+                slots[i].* = try decode(reader, allocator);
+            }
+            return NSObject{ .frame = .{ .tags = tags, .slots = slots } };
+        },
+        .symbol => {
+            const length = try decodeXlong(reader);
+            var symbol = try allocator.alloc(u8, @intCast(usize, length));
+            _ = try reader.read(symbol);
+            return NSObject{ .symbol = symbol };
+        },
+        .string => {
+            const length = try decodeXlong(reader);
+            const string_data: []u16 = try allocator.alloc(u16, @intCast(usize, length) / 2);
+            for (string_data) |_, i| {
+                string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
+            }
+            return NSObject{ .string = string_data };
+        },
+        .precedent => return NSObject{ .precedent = try decodeXlong(reader) },
+        .nil => return NSObject{ .nil = 0 },
+        .smallRect => return NSObject{ .smallRect = .{
+            .top = try reader.readByte(),
+            .left = try reader.readByte(),
+            .right = try reader.readByte(),
+            .bottom = try reader.readByte(),
+        } },
+        else => |tag| {
+            std.log.err("Invalid object tag {}", .{tag});
+            return error.InvalidArgument;
+        },
+    }
+}
+
+pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
+    try writer.writeByte(@enumToInt(object.*));
+    switch (object.*) {
+        .immediate => |o| {
+            try encodeXlong(o, writer);
+        },
+        .character => |o| {
+            try writer.writeByte(o);
+        },
+        .uniChar => |o| {
+            try writer.writeIntBig(u16, o);
+        },
+        .binary => |o| {
+            try encodeXlong(@intCast(i32, o.data.len), writer);
+            try encode(o.class, writer);
+            _ = try writer.write(o.data);
+        },
+        .array => |o| {
+            try encodeXlong(@intCast(i32, o.slots.len), writer);
+            try encode(o.class, writer);
+            for (o.slots) |slot| {
+                try encode(slot, writer);
+            }
+        },
+        .plainArray => |o| {
+            try encodeXlong(@intCast(i32, o.len), writer);
+            for (o) |slot| {
+                try encode(slot, writer);
+            }
+        },
+        .frame => |o| {
+            try encodeXlong(@intCast(i32, o.tags.len), writer);
+            for (o.tags) |tag| {
+                try encode(tag, writer);
+            }
+            for (o.slots) |slot| {
+                try encode(slot, writer);
+            }
+        },
+        .symbol => |o| {
+            try encodeXlong(@intCast(i32, o.len), writer);
+            _ = try writer.write(o);
+        },
+        .string => |o| {
+            try encodeXlong(@intCast(i32, o.len) * 2, writer);
+            for (o) |char| {
+                try writer.writeIntBig(u16, char);
+            }
+        },
+        .precedent => |o| {
+            try encodeXlong(@intCast(i32, o), writer);
+        },
+        .nil => {},
+        .smallRect => |o| {
+            try writer.writeByte(o.top);
+            try writer.writeByte(o.left);
+            try writer.writeByte(o.bottom);
+            try writer.writeByte(o.right);
+        },
+    }
+}
+
+test "Decode XLong" {
+    const data: []const u8 = &.{ 0, 1, 254, 255, 0, 0, 1, 0 };
+    const s = std.io.fixedBufferStream(data).reader();
+    const zero = decodeXlong(&s);
+    std.debug.print("\n{}\n", .{zero});
+    const one = decodeXlong(&s);
+    std.debug.print("{}\n", .{one});
+    const small = decodeXlong(&s);
+    std.debug.print("{}\n", .{small});
+    const medium = decodeXlong(&s);
+    std.debug.print("{}\n", .{medium});
+}
+
+test "Decode simple types" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const data: []const u8 = &.{
+        10, 1, 65,   2,   0x10, 0x01, 7,    4,   'n', 'a', 'm', 'e', //
+        8,  6, 0x00, 'A', 0x00, 'B',  0x00, 'C',
+    };
+    const s = std.io.fixedBufferStream(data).reader();
+
+    const nil = decode(&s, arena.allocator());
+    std.debug.print("\n{s}\n", .{nil});
+
+    const character = decode(&s, arena.allocator());
+    std.debug.print("{s}\n", .{character});
+
+    const uniChar = decode(&s, arena.allocator());
+    std.debug.print("{s}\n", .{uniChar});
+
+    const symbol = decode(&s, arena.allocator());
+    std.debug.print("{s}\n", .{symbol});
+
+    const string = decode(&s, arena.allocator());
+    std.debug.print("{s}\n", .{string});
+}
+
+test "Decode compound types" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const data: []const u8 = &.{
+        3, 4,   7,  3, 'b', 'i', 'n', '1', '2', '3', '4', //
+        5, 3,   7,  3, '1', '2', '3', 8,   4,   0,   'A',
+        0, 'B', 10, 4, 3,   7,   3,   'a', 'r', 'r', 0,
+        2, 8,   4,  0, 'A', 0,   'B', 10,
+    };
+    const s = std.io.fixedBufferStream(data).reader();
+
+    const binary = try decode(&s, arena.allocator());
+    std.debug.print("\n{}\n", .{binary});
+
+    const plainArray = try decode(&s, arena.allocator());
+    std.debug.print("{}\n", .{plainArray});
+
+    const array = try decode(&s, arena.allocator());
+    std.debug.print("{}\n", .{array});
+}
+
+test "Encode simple types" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    var data: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&data);
+    const s = fbs.writer();
+
+    var start = try fbs.getPos();
+    try encode(&NSObject{ .immediate = 0 }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .immediate = 256 }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .character = 'a' }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .uniChar = 0x1001 }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .symbol = &.{ 'n', 'a', 'm', 'e' } }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .string = &.{ 'A', 'B', 'C' } }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+}
+
+test "Encode complex types" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    var data: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&data);
+    const s = fbs.writer();
+
+    var start = try fbs.getPos();
+    try encode(&NSObject{ .binary = .{
+        .class = &NSObject{ .symbol = &.{ 'b', 'i', 'n' } },
+        .data = &.{ 1, 2, 3, 4, 5, 6, 7, 8 },
+    } }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+
+    start = try fbs.getPos();
+    try encode(&NSObject{ .array = .{
+        .class = &NSObject{ .symbol = &.{ 'a', 'r', 'r' } },
+        .slots = &.{
+            &NSObject{ .nil = 0 },
+            &NSObject{ .string = &.{ 'a', 'b', 'c', 'd' } },
+            &NSObject{ .immediate = 0x1234 },
+        },
+    } }, s);
+    hexdump.debug(data[start..try fbs.getPos()]);
+}
+
+test "Roundtrip encoding/decoding" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    var data: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&data);
+    const writer = fbs.writer();
+    const reader = fbs.reader();
+
+    var start = try fbs.getPos();
+    try encode(&NSObject{ .array = .{
+        .class = &NSObject{ .symbol = &.{ 'a', 'r', 'r' } },
+        .slots = &.{
+            &NSObject{ .nil = 0 },
+            &NSObject{ .string = &.{ 'a', 'b', 'c', 'd' } },
+            &NSObject{ .immediate = 0x1234 },
+        },
+    } }, writer);
+    hexdump.debug(data[start..try fbs.getPos()]);
+    fbs.reset();
+    const o = try decode(reader, arena.allocator());
+    var buffer: [1024]u8 = undefined;
+    var fb = std.io.fixedBufferStream(&buffer);
+    try o.write(fb.writer());
+    std.debug.print("{s}\n", .{buffer[0..try fb.getPos()]});
+}

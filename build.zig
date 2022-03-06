@@ -31,7 +31,6 @@ pub fn build(b: *std.build.Builder) void {
 
     const znwt_test_step = b.step("test", "Run unit tests");
     znwt_test_step.dependOn(&znwt_tests.step);
-    znwt_test_step.dependOn(&znwt_tests.step);
 
     const nsof = b.addExecutable("nsof", "src/nsof.zig");
     nsof.setTarget(target);
@@ -52,6 +51,5 @@ pub fn build(b: *std.build.Builder) void {
     nsof_tests.setBuildMode(mode);
 
     const nsof_test_step = b.step("test", "Run unit tests");
-    nsof_test_step.dependOn(&nsof_tests.step);
     nsof_test_step.dependOn(&nsof_tests.step);
 }
