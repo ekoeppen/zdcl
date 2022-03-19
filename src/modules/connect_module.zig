@@ -15,6 +15,7 @@ const State = enum {
     set_timeout,
     password,
     up,
+    app_connected,
 };
 
 const Action = enum {
@@ -83,9 +84,12 @@ var connect_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
         .{
             .state = .up,
             .actions = &.{
-                .{ .event = .hello, .action = .connected },
                 .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
             },
+        },
+        .{
+            .state = .app_connected,
+            .actions = &.{},
         },
         .{
             .actions = &.{
@@ -130,7 +134,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .which_icons => {
-                std.mem.copy(u8, challenge[0..8], packet.data[8..16]);
+                std.mem.copy(u8, challenge[0..8], packet.data[4..12]);
                 var dock_packet = try DockPacket.init(.which_icons, .out, &.{ 0, 0, 0, all_icons }, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
@@ -159,6 +163,13 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
 pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
     switch (event) {
         .dock => |packet| if (packet.direction == .in) try handleDockCommand(packet, allocator),
+        .serial => |serial| {
+            if (connect_fsm.state == .up and serial.direction == .in and serial.data[1] == 5) {
+                var app_event = try AppEvent.init(.connected, .in, &.{}, allocator);
+                try event_queue.enqueue(.{ .app = app_event });
+                connect_fsm.state = .app_connected;
+            }
+        },
         else => {},
     }
 }

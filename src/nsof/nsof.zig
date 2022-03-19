@@ -45,6 +45,33 @@ pub const NSObject = union(NSObjectTag) {
         right: u8,
     },
 
+    pub fn deinit(self: *const NSObject, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .binary => |o| {
+                allocator.free(o.data);
+                o.class.deinit(allocator);
+            },
+            .array => |o| {
+                for (o.slots) |slot| slot.deinit(allocator);
+                o.class.deinit(allocator);
+            },
+            .plainArray => |o| {
+                for (o) |slot| slot.deinit(allocator);
+                allocator.free(o);
+            },
+            .frame => |o| {
+                for (o.tags) |tag| tag.deinit(allocator);
+                for (o.slots) |slot| slot.deinit(allocator);
+                allocator.free(o.tags);
+                allocator.free(o.slots);
+            },
+            .symbol => |o| allocator.free(o),
+            .string => |o| allocator.free(o),
+            else => {},
+        }
+        allocator.destroy(self);
+    }
+
     pub fn write(self: *const NSObject, writer: anytype) anyerror!void {
         const f = std.fmt.format;
         switch (self.*) {
@@ -99,6 +126,18 @@ pub const NSObject = union(NSObjectTag) {
             .smallRect => |o| try f(writer, "[{d}]", .{o}),
         }
     }
+
+    pub fn getSlot(self: *const NSObject, slot_name: []const u8) ?*const NSObject {
+        switch (self.*) {
+            .frame => |frame| {
+                const slot = for (frame.tags) |tag, i| {
+                    if (std.mem.eql(u8, slot_name, tag.symbol)) break self.frame.slots[i];
+                } else null;
+                return slot;
+            },
+            else => return null,
+        }
+    }
 };
 
 fn decodeXlong(reader: anytype) !i32 {
@@ -119,61 +158,53 @@ fn encodeXlong(xlong: i32, writer: anytype) !void {
     try writer.writeIntBig(i32, xlong);
 }
 
-pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!NSObject {
+pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject {
+    var o: *NSObject = try allocator.create(NSObject);
     switch (@intToEnum(NSObjectTag, try reader.readByte())) {
-        .immediate => return NSObject{ .immediate = try decodeXlong(reader) },
-        .character => return NSObject{ .character = try reader.readByte() },
-        .uniChar => return NSObject{ .uniChar = try reader.readIntBig(u16) },
+        .immediate => o.* = NSObject{ .immediate = try decodeXlong(reader) },
+        .character => o.* = NSObject{ .character = try reader.readByte() },
+        .uniChar => o.* = NSObject{ .uniChar = try reader.readIntBig(u16) },
         .binary => {
             const length = try decodeXlong(reader);
-            var class = try allocator.create(NSObject);
-            class.* = try decode(reader, allocator);
+            var class = try decode(reader, allocator);
             var data = try allocator.alloc(u8, @intCast(usize, length));
             _ = try reader.read(data);
-            return NSObject{ .binary = .{
-                .class = class,
-                .data = data,
-            } };
+            o.* = NSObject{ .binary = .{ .class = class, .data = data } };
         },
         .array => {
             const count = try decodeXlong(reader);
-            var class = try allocator.create(NSObject);
-            class.* = try decode(reader, allocator);
+            var class = try decode(reader, allocator);
             var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (elements) |_, i| {
-                elements[i] = try allocator.create(NSObject);
-                elements[i].* = try decode(reader, allocator);
+                elements[i] = try decode(reader, allocator);
             }
-            return NSObject{ .array = .{ .class = class, .slots = elements } };
+            o.* = NSObject{ .array = .{ .class = class, .slots = elements } };
         },
         .plainArray => {
             const count = try decodeXlong(reader);
             var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (elements) |_, i| {
-                elements[i] = try allocator.create(NSObject);
-                elements[i].* = try decode(reader, allocator);
+                elements[i] = try decode(reader, allocator);
             }
-            return NSObject{ .plainArray = elements };
+            o.* = NSObject{ .plainArray = elements };
         },
         .frame => {
             const count = try decodeXlong(reader);
             var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
             var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (tags) |_, i| {
-                tags[i] = try allocator.create(NSObject);
-                tags[i].* = try decode(reader, allocator);
+                tags[i] = try decode(reader, allocator);
             }
             for (slots) |_, i| {
-                slots[i] = try allocator.create(NSObject);
-                slots[i].* = try decode(reader, allocator);
+                slots[i] = try decode(reader, allocator);
             }
-            return NSObject{ .frame = .{ .tags = tags, .slots = slots } };
+            o.* = NSObject{ .frame = .{ .tags = tags, .slots = slots } };
         },
         .symbol => {
             const length = try decodeXlong(reader);
             var symbol = try allocator.alloc(u8, @intCast(usize, length));
             _ = try reader.read(symbol);
-            return NSObject{ .symbol = symbol };
+            o.* = NSObject{ .symbol = symbol };
         },
         .string => {
             const length = try decodeXlong(reader);
@@ -181,11 +212,11 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!NSObject {
             for (string_data) |_, i| {
                 string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
             }
-            return NSObject{ .string = string_data };
+            o.* = NSObject{ .string = string_data };
         },
-        .precedent => return NSObject{ .precedent = try decodeXlong(reader) },
-        .nil => return NSObject{ .nil = 0 },
-        .smallRect => return NSObject{ .smallRect = .{
+        .precedent => o.* = NSObject{ .precedent = try decodeXlong(reader) },
+        .nil => o.* = NSObject{ .nil = 0 },
+        .smallRect => o.* = NSObject{ .smallRect = .{
             .top = try reader.readByte(),
             .left = try reader.readByte(),
             .right = try reader.readByte(),
@@ -196,6 +227,7 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!NSObject {
             return error.InvalidArgument;
         },
     }
+    return o;
 }
 
 pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {

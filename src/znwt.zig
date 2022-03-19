@@ -5,6 +5,7 @@ const mnp_layer = @import("./protocol/mnp_layer.zig");
 const dock_layer = @import("./protocol/dock_layer.zig");
 const connect_module = @import("./modules/connect_module.zig");
 const load_package_module = @import("./modules/load_package_module.zig");
+const info_module = @import("./modules/info_module.zig");
 const event_queue = @import("./protocol/event_queue.zig");
 const args = @import("./utils/args.zig");
 
@@ -85,6 +86,7 @@ fn processStackEvents(file: std.os.fd_t, command: Command, allocator: std.mem.Al
         try connect_module.processEvent(event, allocator);
         switch (command) {
             .load => |load| try load_package_module.processEvent(event, load.data, allocator),
+            .info => try info_module.processEvent(event, allocator),
             else => {},
         }
         event.deinit(allocator);

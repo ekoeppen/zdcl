@@ -181,7 +181,7 @@ pub const SerialPacket = struct {
 
     pub fn format(self: SerialPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.length });
-        try hexdump.toWriter(self.data[0..self.length], writer);
+        try hexdump.toWriter(self.data, writer);
     }
 
     pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !SerialPacket {
@@ -202,7 +202,7 @@ pub const MnpPacket = struct {
 
     pub fn format(self: MnpPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "{}\n", .{self.direction});
-        try hexdump.toWriter(self.data[0..self.length], writer);
+        try hexdump.toWriter(self.data, writer);
     }
 
     pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !MnpPacket {
@@ -217,14 +217,14 @@ pub const MnpPacket = struct {
 };
 
 pub const DockPacket = struct {
-    direction: EventDirection,
-    command: DockCommand,
+    direction: EventDirection = undefined,
+    command: DockCommand = undefined,
     length: u32 = undefined,
     data: []u8 = undefined,
 
     pub fn format(self: DockPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.command });
-        try hexdump.toWriter(self.data[0..self.length], writer);
+        try hexdump.toWriter(self.data, writer);
     }
 
     pub fn init(command: DockCommand, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {

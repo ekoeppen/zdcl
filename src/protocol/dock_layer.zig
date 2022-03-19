@@ -1,9 +1,22 @@
 const std = @import("std");
 const event_queue = @import("./event_queue.zig");
 
+var active_packet: event_queue.DockPacket = .{};
+
 fn handleIncomingPacket(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
-    var command = try event_queue.DockPacket.init(@intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)), .in, packet.data[12..packet.length], allocator);
-    try event_queue.enqueue(.{ .dock = command });
+    if (active_packet.length == 0) {
+        const length = std.mem.readInt(u32, packet.data[12..16], .Big);
+        active_packet = try event_queue.DockPacket.init(@intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)), .in, packet.data[16..packet.length], allocator);
+        active_packet.length = length;
+    } else {
+        const current = active_packet.data.len;
+        active_packet.data = try allocator.realloc(active_packet.data, active_packet.data.len + packet.data.len);
+        std.mem.copy(u8, active_packet.data[current..], packet.data);
+    }
+    if (active_packet.data.len >= active_packet.length) {
+        try event_queue.enqueue(.{ .dock = active_packet });
+        active_packet.length = 0;
+    }
 }
 
 pub fn handleOutgoingPacket(packet: event_queue.DockPacket, allocator: std.mem.Allocator) !void {

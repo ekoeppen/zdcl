@@ -28,7 +28,7 @@ const cli_commands = .{ //
     },
 };
 
-fn decode(file: []const u8, allocator: std.mem.Allocator) !nsof.NSObject {
+fn decode(file: []const u8, allocator: std.mem.Allocator) !*nsof.NSObject {
     const fd = try std.os.open(file, std.os.O.RDONLY, 0);
     defer std.os.close(fd);
     const file_stat = try std.os.fstat(fd);
@@ -49,6 +49,7 @@ pub fn main() anyerror!void {
     if (std.mem.eql(u8, parsed_args.command, cli_commands.decode.name)) {
         const o = try decode(parsed_args.parameters.items[0], allocator);
         try o.write(std.io.getStdOut().writer());
+        o.deinit(allocator);
     }
 }
 
