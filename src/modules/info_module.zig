@@ -84,6 +84,14 @@ fn saveStores(stores_response: *nsof.NSObject, allocator: std.mem.Allocator) !vo
     current_store = 0;
 }
 
+fn releaseStores(allocator: std.mem.Allocator) void {
+    for (stores) |store| {
+        allocator.free(store.kind);
+        allocator.free(store.name);
+    }
+    allocator.free(stores);
+}
+
 fn sendStoreSelection(allocator: std.mem.Allocator) !void {
     const store = stores[current_store];
     var data: []u8 = try allocator.alloc(u8, store.name.len + store.kind.len + 128);
@@ -106,7 +114,6 @@ fn sendStoreSelection(allocator: std.mem.Allocator) !void {
 }
 
 fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
-    _ = allocator;
     if (info_fsm.input(packet.command)) |action| {
         switch (action) {
             .select_store => {
@@ -143,6 +150,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try app_names.write(std.io.getStdOut().writer());
                 const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
+                releaseStores(allocator);
             },
         }
     }

@@ -15,7 +15,6 @@ const State = enum {
     set_timeout,
     password,
     up,
-    app_connected,
 };
 
 const Action = enum {
@@ -24,7 +23,6 @@ const Action = enum {
     which_icons,
     set_timeout,
     password,
-    connected,
     disconnect,
 };
 
@@ -88,10 +86,6 @@ var connect_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
             },
         },
         .{
-            .state = .app_connected,
-            .actions = &.{},
-        },
-        .{
             .actions = &.{
                 .{ .event = .disconnect, .action = .disconnect, .new_state = .idle },
             },
@@ -145,11 +139,9 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
             .password => {
                 var response: [8]u8 = undefined;
                 encrypt(&challenge, &response);
-                var dock_packet = try DockPacket.init(.password, .out, response[0..8], allocator);
+                const dock_packet = try DockPacket.init(.password, .out, response[0..8], allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
-            },
-            .connected => {
-                var app_event = try AppEvent.init(.connected, .in, &.{}, allocator);
+                const app_event = try AppEvent.init(.connected, .in, &.{}, allocator);
                 try event_queue.enqueue(.{ .app = app_event });
             },
             .disconnect => {
@@ -163,13 +155,6 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
 pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
     switch (event) {
         .dock => |packet| if (packet.direction == .in) try handleDockCommand(packet, allocator),
-        .serial => |serial| {
-            if (connect_fsm.state == .up and serial.direction == .in and serial.data[1] == 5) {
-                var app_event = try AppEvent.init(.connected, .in, &.{}, allocator);
-                try event_queue.enqueue(.{ .app = app_event });
-                connect_fsm.state = .app_connected;
-            }
-        },
         else => {},
     }
 }
