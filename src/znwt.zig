@@ -6,6 +6,7 @@ const dock_layer = @import("./protocol/dock_layer.zig");
 const connect_module = @import("./modules/connect_module.zig");
 const load_package_module = @import("./modules/load_package_module.zig");
 const info_module = @import("./modules/info_module.zig");
+const send_soup_module = @import("./modules/send_soup_module.zig");
 const event_queue = @import("./protocol/event_queue.zig");
 const args = @import("./utils/args.zig");
 
@@ -13,7 +14,15 @@ const Command = union(enum) {
     load: struct { file: []const u8, data: []const u8 = undefined },
     info: bool,
     sync: bool,
-    soup_export: struct { soup: []const u8, file: []const u8 },
+    soup_export: []const u8,
+};
+
+const verbose_arg: args.Arg = .{
+    .name = "verbose",
+    .short = "-v",
+    .long = "--verbose",
+    .help = "Vebose output",
+    .value = .{ .boolean = false },
 };
 
 const port_arg: args.Arg = .{
@@ -43,6 +52,7 @@ const common_args = .{
     .help = help_arg,
     .port = port_arg,
     .speed = speed_arg,
+    .verbose = verbose_arg,
 };
 
 const cli_commands = .{ //
@@ -61,6 +71,11 @@ const cli_commands = .{ //
         .help = "Load package",
         .args = .{},
     },
+    .soup_export = .{
+        .name = "export",
+        .help = "Export soup",
+        .args = .{},
+    },
 };
 
 const LogLayer = struct {
@@ -75,7 +90,7 @@ const LogLayer = struct {
     }
 };
 
-const log_layer = LogLayer{};
+var log_layer = LogLayer{ .enabled = false };
 
 fn processStackEvents(file: std.os.fd_t, command: Command, allocator: std.mem.Allocator) !void {
     while (event_queue.dequeue()) |event| {
@@ -87,6 +102,7 @@ fn processStackEvents(file: std.os.fd_t, command: Command, allocator: std.mem.Al
         switch (command) {
             .load => |load| try load_package_module.processEvent(event, load.data, allocator),
             .info => try info_module.processEvent(event, allocator),
+            .soup_export => |soup| try send_soup_module.processEvent(event, soup, allocator),
             else => {},
         }
         event.deinit(allocator);
@@ -127,6 +143,12 @@ fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Co
         _ = try std.os.read(fd, package_data);
         command = .{ .load = .{ .file = file_name, .data = package_data } };
         connect_module.session_type = .load_package;
+    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.soup_export.name)) {
+        command = .{ .soup_export = parsed_args.parameters.items[0] };
+        connect_module.session_type = .synchronize;
+    }
+    if (parsed_args.args.get("verbose")) |_| {
+        log_layer.enabled = true;
     }
     return command;
 }

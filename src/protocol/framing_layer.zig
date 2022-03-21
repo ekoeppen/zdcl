@@ -185,7 +185,6 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
                 continue :read_loop;
             }
             if (input(serial_buffer[0])) {
-                std.debug.print("\n", .{});
                 var serial_packet: event_queue.SerialPacket = .{
                     .direction = .in,
                     .length = packet_length,

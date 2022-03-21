@@ -13,18 +13,19 @@ const State = enum {
     idle,
     getting_store_names,
     selecting_store,
-    getting_soup_names,
-    getting_app_list,
+    selecting_soup,
+    getting_entries,
 };
 
 const Action = enum {
     select_store,
-    get_soup_names,
-    show_soup_names,
-    show_app_list,
+    select_soup,
+    get_entries,
+    save_entry,
+    backup_done,
 };
 
-var info_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
+var send_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     .state = .idle,
     .transitions = &.{
         .{
@@ -40,26 +41,27 @@ var info_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
         .{
             .state = .selecting_store,
             .actions = &.{
-                .{ .event = .result, .action = .get_soup_names, .new_state = .getting_soup_names },
+                .{ .event = .result, .action = .select_soup, .new_state = .getting_entries },
             },
         },
         .{
-            .state = .getting_soup_names,
+            .state = .getting_entries,
             .actions = &.{
-                .{ .event = .soup_names, .action = .show_soup_names },
+                .{ .event = .result, .action = .get_entries },
             },
         },
         .{
-            .state = .getting_app_list,
+            .state = .getting_entries,
             .actions = &.{
-                .{ .event = .app_names, .action = .show_app_list, .new_state = .idle },
+                .{ .event = .entry, .action = .save_entry },
+                .{ .event = .backup_soup_done, .action = .backup_done },
             },
         },
     },
 };
 
-fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
-    if (info_fsm.input(packet.command)) |action| {
+fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Allocator) !void {
+    if (send_fsm.input(packet.command)) |action| {
         switch (action) {
             .select_store => {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
@@ -69,46 +71,48 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try stores.setCurrent(allocator);
                 stores.current += 1;
             },
-            .get_soup_names => {
-                const dock_packet = try DockPacket.init(.get_soup_names, .out, &.{}, allocator);
+            .select_soup => {
+                var soup_name = [_]u8{0} ** 52;
+                for (soup) |char, i| {
+                    soup_name[i * 2 + 1] = char;
+                }
+                const dock_packet = try DockPacket.init(.set_current_soup, .out, soup_name[0 .. soup.len * 2 + 2], allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
-            .show_soup_names => {
+            .get_entries => {
+                const dock_packet = try DockPacket.init(.send_soup, .out, &.{}, allocator);
+                try event_queue.enqueue(.{ .dock = dock_packet });
+            },
+            .save_entry => {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
-                const soup_names = try nsof.decode(reader, allocator);
-                defer soup_names.deinit(allocator);
-                try soup_names.write(std.io.getStdOut().writer());
+                const entry = try nsof.decode(reader, allocator);
+                defer entry.deinit(allocator);
+                try entry.write(std.io.getStdOut().writer());
+            },
+            .backup_done => {
                 if (stores.current < stores.stores.len) {
                     try stores.setCurrent(allocator);
                     stores.current += 1;
-                    info_fsm.state = .selecting_store;
+                    send_fsm.state = .selecting_store;
                 } else {
-                    const dock_packet = try DockPacket.init(.get_app_names, .out, &.{ 0, 0, 0, 0 }, allocator);
+                    var dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                     try event_queue.enqueue(.{ .dock = dock_packet });
-                    info_fsm.state = .getting_app_list;
+                    send_fsm.state = .idle;
                 }
-            },
-            .show_app_list => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
-                const app_names = try nsof.decode(reader, allocator);
-                defer app_names.deinit(allocator);
-                try app_names.write(std.io.getStdOut().writer());
-                const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
-                try event_queue.enqueue(.{ .dock = dock_packet });
-                stores.deinit(allocator);
             },
         }
     }
 }
 
-pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
+pub fn processEvent(event: event_queue.StackEvent, soup: []const u8, allocator: std.mem.Allocator) !void {
+    _ = soup;
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
             var dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);
             try event_queue.enqueue(.{ .dock = dock_packet });
-            info_fsm.state = .getting_store_names;
+            send_fsm.state = .getting_store_names;
         },
-        .dock => |packet| if (packet.direction == .in) try handleDockCommand(packet, allocator),
+        .dock => |packet| if (packet.direction == .in) try handleDockCommand(packet, soup, allocator),
         else => {},
     }
 }
