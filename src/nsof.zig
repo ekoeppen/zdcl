@@ -3,6 +3,9 @@ const args = @import("./utils/args.zig");
 const nsof = @import("./nsof/nsof.zig");
 const hexdump = @import("./utils/hexdump.zig");
 
+const NSObject = nsof.NSObject;
+const NSObjectSet = nsof.NSObjectSet;
+
 const help_arg: args.Arg = .{
     .name = "help",
     .short = "-h",
@@ -28,7 +31,7 @@ const cli_commands = .{ //
     },
 };
 
-fn decode(file: []const u8, allocator: std.mem.Allocator) !*nsof.NSObject {
+fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
     const fd = try std.os.open(file, std.os.O.RDONLY, 0);
     defer std.os.close(fd);
     const file_stat = try std.os.fstat(fd);
@@ -37,7 +40,10 @@ fn decode(file: []const u8, allocator: std.mem.Allocator) !*nsof.NSObject {
     hexdump.debug(nsof_data);
     const reader = std.io.fixedBufferStream(nsof_data).reader();
     _ = try reader.readByte();
-    return try nsof.decode(reader, allocator);
+    var objects = NSObjectSet.init(allocator);
+    defer objects.deinit(allocator);
+    const o = try nsof.decode(reader, &objects, allocator);
+    try o.write(std.io.getStdOut().writer());
 }
 
 pub fn main() anyerror!void {
@@ -47,9 +53,7 @@ pub fn main() anyerror!void {
     _ = allocator;
     var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
     if (std.mem.eql(u8, parsed_args.command, cli_commands.decode.name)) {
-        const o = try decode(parsed_args.parameters.items[0], allocator);
-        try o.write(std.io.getStdOut().writer());
-        o.deinit(allocator);
+        try decode(parsed_args.parameters.items[0], allocator);
     }
 }
 

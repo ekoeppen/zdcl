@@ -8,6 +8,7 @@ const stores = @import("./stores.zig");
 const AppEvent = event_queue.AppEvent;
 const DockPacket = event_queue.DockPacket;
 const NSObject = nsof.NSObject;
+const NSObjectSet = nsof.NSObjectSet;
 
 const State = enum {
     idle,
@@ -65,8 +66,9 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
         switch (action) {
             .select_store => {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
-                const stores_response = try nsof.decode(reader, allocator);
-                defer stores_response.deinit(allocator);
+                var objects = NSObjectSet.init(allocator);
+                defer objects.deinit(allocator);
+                const stores_response = try nsof.decode(reader, &objects, allocator);
                 try stores.save(stores_response, allocator);
                 try stores.setCurrent(allocator);
                 stores.current += 1;
@@ -85,8 +87,9 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
             },
             .save_entry => {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
-                const entry = try nsof.decode(reader, allocator);
-                defer entry.deinit(allocator);
+                var objects = NSObjectSet.init(allocator);
+                defer objects.deinit(allocator);
+                const entry = try nsof.decode(reader, &objects, allocator);
                 try entry.write(std.io.getStdOut().writer());
             },
             .backup_done => {

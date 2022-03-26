@@ -47,26 +47,43 @@ pub const NSObject = union(NSObjectTag) {
 
     pub fn deinit(self: *const NSObject, allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .binary => |o| {
-                allocator.free(o.data);
-                o.class.deinit(allocator);
-            },
-            .array => |o| {
-                for (o.slots) |slot| slot.deinit(allocator);
-                o.class.deinit(allocator);
-            },
-            .plainArray => |o| {
-                for (o) |slot| slot.deinit(allocator);
-                allocator.free(o);
-            },
+            .binary => |o| allocator.free(o.data),
+            .array => |o| allocator.free(o.slots),
+            .plainArray => |o| allocator.free(o),
             .frame => |o| {
-                for (o.tags) |tag| tag.deinit(allocator);
-                for (o.slots) |slot| slot.deinit(allocator);
                 allocator.free(o.tags);
                 allocator.free(o.slots);
             },
             .symbol => |o| allocator.free(o),
             .string => |o| allocator.free(o),
+            .precedent => std.log.err("Trying to deallocate precedent", .{}),
+            else => {},
+        }
+        allocator.destroy(self);
+    }
+
+    pub fn recursiveDeinit(self: *const NSObject, allocator: std.mem.Allocator) void {
+        switch (self.*) {
+            .binary => |o| {
+                o.class.recursiveDeinit(allocator);
+                o.deinit();
+            },
+            .array => |o| {
+                for (o.slots) |slot| slot.recursiveDeinit(allocator);
+                o.class.recursiveDeinit(allocator);
+                o.deinit();
+            },
+            .plainArray => |o| {
+                for (o) |slot| slot.recursiveDeinit(allocator);
+                o.deinit();
+            },
+            .frame => |o| {
+                for (o.tags) |tag| tag.recursiveDeinit(allocator);
+                for (o.slots) |slot| slot.recursiveDeinit(allocator);
+                o.deinit();
+            },
+            .symbol => |o| o.deinit(),
+            .string => |o| o.deinit(),
             else => {},
         }
         allocator.destroy(self);
@@ -140,6 +157,29 @@ pub const NSObject = union(NSObjectTag) {
     }
 };
 
+pub const NSObjectSet = struct {
+    objects: std.ArrayList(*NSObject) = undefined,
+
+    pub fn init(allocator: std.mem.Allocator) NSObjectSet {
+        return NSObjectSet{
+            .objects = std.ArrayList(*NSObject).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *NSObjectSet, allocator: std.mem.Allocator) void {
+        for (self.objects.items) |object| object.deinit(allocator);
+        self.objects.deinit();
+    }
+
+    pub fn append(self: *NSObjectSet, object: *NSObject) !void {
+        try self.objects.append(object);
+    }
+
+    pub fn item(self: *NSObjectSet, index: usize) *NSObject {
+        return self.objects.items[index];
+    }
+};
+
 fn decodeXlong(reader: anytype) !i32 {
     var r: i32 = try reader.readByte();
     if (r < 255) {
@@ -158,25 +198,30 @@ fn encodeXlong(xlong: i32, writer: anytype) !void {
     try writer.writeIntBig(i32, xlong);
 }
 
-pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject {
-    var o: *NSObject = try allocator.create(NSObject);
-    switch (@intToEnum(NSObjectTag, try reader.readByte())) {
+pub fn decode(reader: anytype, objects: *NSObjectSet, allocator: std.mem.Allocator) anyerror!*NSObject {
+    var o: *NSObject = undefined;
+    const tag = @intToEnum(NSObjectTag, try reader.readByte());
+    if (tag != .precedent) {
+        o = try allocator.create(NSObject);
+        try objects.append(o);
+    }
+    switch (tag) {
         .immediate => o.* = NSObject{ .immediate = try decodeXlong(reader) },
         .character => o.* = NSObject{ .character = try reader.readByte() },
         .uniChar => o.* = NSObject{ .uniChar = try reader.readIntBig(u16) },
         .binary => {
             const length = try decodeXlong(reader);
-            var class = try decode(reader, allocator);
+            var class = try decode(reader, objects, allocator);
             var data = try allocator.alloc(u8, @intCast(usize, length));
             _ = try reader.read(data);
             o.* = NSObject{ .binary = .{ .class = class, .data = data } };
         },
         .array => {
             const count = try decodeXlong(reader);
-            var class = try decode(reader, allocator);
+            var class = try decode(reader, objects, allocator);
             var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (elements) |_, i| {
-                elements[i] = try decode(reader, allocator);
+                elements[i] = try decode(reader, objects, allocator);
             }
             o.* = NSObject{ .array = .{ .class = class, .slots = elements } };
         },
@@ -184,7 +229,7 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject 
             const count = try decodeXlong(reader);
             var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (elements) |_, i| {
-                elements[i] = try decode(reader, allocator);
+                elements[i] = try decode(reader, objects, allocator);
             }
             o.* = NSObject{ .plainArray = elements };
         },
@@ -193,10 +238,10 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject 
             var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
             var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
             for (tags) |_, i| {
-                tags[i] = try decode(reader, allocator);
+                tags[i] = try decode(reader, objects, allocator);
             }
             for (slots) |_, i| {
-                slots[i] = try decode(reader, allocator);
+                slots[i] = try decode(reader, objects, allocator);
             }
             o.* = NSObject{ .frame = .{ .tags = tags, .slots = slots } };
         },
@@ -214,7 +259,7 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject 
             }
             o.* = NSObject{ .string = string_data };
         },
-        .precedent => o.* = NSObject{ .precedent = try decodeXlong(reader) },
+        .precedent => o = objects.item(@intCast(usize, try decodeXlong(reader))),
         .nil => o.* = NSObject{ .nil = 0 },
         .smallRect => o.* = NSObject{ .smallRect = .{
             .top = try reader.readByte(),
@@ -222,7 +267,7 @@ pub fn decode(reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject 
             .right = try reader.readByte(),
             .bottom = try reader.readByte(),
         } },
-        else => |tag| {
+        else => |_| {
             std.log.err("Invalid object tag {}", .{tag});
             return error.InvalidArgument;
         },
@@ -306,50 +351,62 @@ test "Decode XLong" {
 }
 
 test "Decode simple types" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var objects = NSObjectSet.init(gpa.allocator());
 
     const data: []const u8 = &.{
         10, 1, 65,   2,   0x10, 0x01, 7,    4,   'n', 'a', 'm', 'e', //
-        8,  6, 0x00, 'A', 0x00, 'B',  0x00, 'C',
+        8,  6, 0x00, 'A', 0x00, 'B',  0x00, 'C', 9,   3,
     };
     const s = std.io.fixedBufferStream(data).reader();
 
-    const nil = decode(&s, arena.allocator());
+    const nil = decode(&s, &objects, gpa.allocator());
     std.debug.print("\n{s}\n", .{nil});
 
-    const character = decode(&s, arena.allocator());
+    const character = decode(&s, &objects, gpa.allocator());
     std.debug.print("{s}\n", .{character});
 
-    const uniChar = decode(&s, arena.allocator());
+    const uniChar = decode(&s, &objects, gpa.allocator());
     std.debug.print("{s}\n", .{uniChar});
 
-    const symbol = decode(&s, arena.allocator());
+    const symbol = decode(&s, &objects, gpa.allocator());
     std.debug.print("{s}\n", .{symbol});
 
-    const string = decode(&s, arena.allocator());
+    const string = decode(&s, &objects, gpa.allocator());
     std.debug.print("{s}\n", .{string});
+
+    const precendent = decode(&s, &objects, gpa.allocator());
+    std.debug.print("{s}\n", .{precendent});
+
+    objects.deinit(gpa.allocator());
+    _ = gpa.deinit();
 }
 
 test "Decode compound types" {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var objects = NSObjectSet.init(gpa.allocator());
     const data: []const u8 = &.{
         3, 4,   7,  3, 'b', 'i', 'n', '1', '2', '3', '4', //
         5, 3,   7,  3, '1', '2', '3', 8,   4,   0,   'A',
         0, 'B', 10, 4, 3,   7,   3,   'a', 'r', 'r', 0,
-        2, 8,   4,  0, 'A', 0,   'B', 10,
+        2, 8,   4,  0, 'A', 0,   'B', 10,  9,   2,
     };
     const s = std.io.fixedBufferStream(data).reader();
 
-    const binary = try decode(&s, arena.allocator());
+    const binary = try decode(&s, &objects, gpa.allocator());
     std.debug.print("\n{}\n", .{binary});
 
-    const plainArray = try decode(&s, arena.allocator());
+    const plainArray = try decode(&s, &objects, gpa.allocator());
     std.debug.print("{}\n", .{plainArray});
 
-    const array = try decode(&s, arena.allocator());
+    const array = try decode(&s, &objects, gpa.allocator());
     std.debug.print("{}\n", .{array});
+
+    const precendent = decode(&s, &objects, gpa.allocator());
+    std.debug.print("{s}\n", .{precendent});
+
+    objects.deinit(gpa.allocator());
+    _ = gpa.deinit();
 }
 
 test "Encode simple types" {
@@ -415,6 +472,7 @@ test "Encode complex types" {
 test "Roundtrip encoding/decoding" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
+    var objects = NSObjectSet.init(arena.allocator());
 
     var data: [1024]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&data);
@@ -432,7 +490,7 @@ test "Roundtrip encoding/decoding" {
     } }, writer);
     hexdump.debug(data[start..try fbs.getPos()]);
     fbs.reset();
-    const o = try decode(reader, arena.allocator());
+    const o = try decode(reader, &objects, arena.allocator());
     var buffer: [1024]u8 = undefined;
     var fb = std.io.fixedBufferStream(&buffer);
     try o.write(fb.writer());
