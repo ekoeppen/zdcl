@@ -18,7 +18,7 @@ const NSObjectTag = enum(u8) { //
 };
 
 pub const NSObject = union(NSObjectTag) {
-    immediate: i32,
+    immediate: u32,
     character: u8,
     uniChar: u16,
     binary: struct {
@@ -180,22 +180,35 @@ pub const NSObjectSet = struct {
     }
 };
 
-fn decodeXlong(reader: anytype) !i32 {
-    var r: i32 = try reader.readByte();
+fn decodeXlong(reader: anytype) !u32 {
+    var r: u32 = try reader.readByte();
     if (r < 255) {
         return r;
     }
-    r = try reader.readIntBig(i32);
+    r = try reader.readIntBig(u32);
     return r;
 }
 
-fn encodeXlong(xlong: i32, writer: anytype) !void {
+fn encodeXlong(xlong: u32, writer: anytype) !void {
     if (xlong >= 0 and xlong <= 254) {
         try writer.writeByte(@intCast(u8, xlong));
         return;
     }
     try writer.writeByte(255);
-    try writer.writeIntBig(i32, xlong);
+    try writer.writeIntBig(u32, xlong);
+}
+
+pub fn refToInt(ref: u32) ?i32 {
+    if (ref & 0x3 != 0) {
+        return null;
+    }
+    const n = @bitCast(i32, (ref >> 2) & 0x1fffffff);
+    return if (ref & 0x80000000 == 0) n else -n;
+}
+
+pub fn intToRef(n: i32) ?u32 {
+    if (n > 536870911 or n < -536870912) return null;
+    return if (n > 0) @bitCast(u32, n) << 2 else @bitCast(u32, -n) << 2 | 0x80000000;
 }
 
 pub fn decode(reader: anytype, objects: *NSObjectSet, allocator: std.mem.Allocator) anyerror!*NSObject {
@@ -288,25 +301,25 @@ pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
             try writer.writeIntBig(u16, o);
         },
         .binary => |o| {
-            try encodeXlong(@intCast(i32, o.data.len), writer);
+            try encodeXlong(@intCast(u32, o.data.len), writer);
             try encode(o.class, writer);
             _ = try writer.write(o.data);
         },
         .array => |o| {
-            try encodeXlong(@intCast(i32, o.slots.len), writer);
+            try encodeXlong(@intCast(u32, o.slots.len), writer);
             try encode(o.class, writer);
             for (o.slots) |slot| {
                 try encode(slot, writer);
             }
         },
         .plainArray => |o| {
-            try encodeXlong(@intCast(i32, o.len), writer);
+            try encodeXlong(@intCast(u32, o.len), writer);
             for (o) |slot| {
                 try encode(slot, writer);
             }
         },
         .frame => |o| {
-            try encodeXlong(@intCast(i32, o.tags.len), writer);
+            try encodeXlong(@intCast(u32, o.tags.len), writer);
             for (o.tags) |tag| {
                 try encode(tag, writer);
             }
@@ -315,17 +328,17 @@ pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
             }
         },
         .symbol => |o| {
-            try encodeXlong(@intCast(i32, o.len), writer);
+            try encodeXlong(@intCast(u32, o.len), writer);
             _ = try writer.write(o);
         },
         .string => |o| {
-            try encodeXlong(@intCast(i32, o.len) * 2, writer);
+            try encodeXlong(@intCast(u32, o.len) * 2, writer);
             for (o) |char| {
                 try writer.writeIntBig(u16, char);
             }
         },
         .precedent => |o| {
-            try encodeXlong(@intCast(i32, o), writer);
+            try encodeXlong(@intCast(u32, o), writer);
         },
         .nil => {},
         .smallRect => |o| {
@@ -348,6 +361,23 @@ test "Decode XLong" {
     std.debug.print("{}\n", .{small});
     const medium = decodeXlong(&s);
     std.debug.print("{}\n", .{medium});
+}
+
+test "Ref conversions" {
+    std.debug.print("\n{} {}\n", .{ refToInt(0xddd1bdb8), refToInt(0xed850484) });
+    std.debug.print("{} {}\n", .{ intToRef(-125071214), intToRef(-56705313) });
+    std.debug.print("{} {}\n", .{ intToRef(-393506670), intToRef(-459358497) });
+    try std.testing.expect(refToInt(1) == null);
+    try std.testing.expect(refToInt(2) == null);
+    try std.testing.expect(refToInt(3) == null);
+    try std.testing.expect(intToRef(536870912) == null);
+    try std.testing.expect(intToRef(-536870913) == null);
+    const int: i32 = 10;
+    const ref: ?u32 = intToRef(int);
+    try std.testing.expect(refToInt(ref.?).? == int);
+    const neg_int: i32 = -10;
+    const neg_ref: ?u32 = intToRef(neg_int);
+    try std.testing.expect(refToInt(neg_ref.?).? == neg_int);
 }
 
 test "Decode simple types" {

@@ -27,7 +27,7 @@ pub fn save(stores_response: *nsof.NSObject, allocator: std.mem.Allocator) !void
             std.mem.copy(u16, stores[i].kind, kind.string);
         }
         if (s.getSlot("signature")) |signature| {
-            stores[i].signature = signature.immediate;
+            stores[i].signature = nsof.refToInt(signature.immediate).?;
         }
     }
     current = 0;
@@ -54,7 +54,7 @@ pub fn setCurrent(allocator: std.mem.Allocator) !void {
     }, .slots = &.{
         &NSObject{ .string = store.name },
         &NSObject{ .string = store.kind },
-        &NSObject{ .immediate = store.signature },
+        &NSObject{ .immediate = nsof.intToRef(store.signature).? },
     } } };
     try writer.writeByte(2);
     try nsof.encode(info, writer);
