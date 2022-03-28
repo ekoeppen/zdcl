@@ -26,9 +26,7 @@ const Action = enum {
     backup_done,
 };
 
-fn current_store() *stores.Store {
-    return &stores.stores[stores.current];
-}
+var current_store: *stores.StoreList.Node = undefined;
 
 var send_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     .state = .idle,
@@ -74,7 +72,10 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                 defer objects.deinit(allocator);
                 const stores_response = try nsof.decode(reader, &objects, allocator);
                 try stores.save(stores_response, allocator);
-                try stores.setCurrent(allocator);
+                if (stores.store_list.first) |first_store| {
+                    current_store = first_store;
+                    try stores.setCurrent(&first_store.data, allocator);
+                } else unreachable;
             },
             .select_soup => {
                 var soup_name = [_]u8{0} ** 52;
@@ -97,24 +98,25 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                     (nsof.refToInt(slot.immediate) orelse 0)
                 else
                     0;
-                std.log.info("Store: {d} Entry {d}", .{ current_store().signature, uniqueId });
+                std.log.info("Store: {d} Entry {d}", .{ current_store.data.signature, uniqueId });
                 var b: [128]u8 = undefined;
                 var file = try std.fmt.bufPrint(&b, "entry{d}-{d}.nsof", .{
-                    current_store().signature, uniqueId,
+                    current_store.data.signature, uniqueId,
                 });
                 const fd = try std.os.open(file, std.os.O.CREAT | std.os.O.WRONLY, 0o664);
                 defer std.os.close(fd);
                 _ = try std.os.write(fd, packet.data);
             },
             .backup_done => {
-                stores.current += 1;
-                if (stores.current < stores.stores.len) {
-                    try stores.setCurrent(allocator);
+                if (current_store.next) |next_store| {
+                    current_store = next_store;
+                    try stores.setCurrent(&next_store.data, allocator);
                     send_fsm.state = .selecting_store;
                 } else {
                     var dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                     try event_queue.enqueue(.{ .dock = dock_packet });
                     send_fsm.state = .idle;
+                    stores.deinit(allocator);
                 }
             },
         }

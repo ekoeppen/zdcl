@@ -59,6 +59,8 @@ var info_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
     },
 };
 
+var current_store: *stores.StoreList.Node = undefined;
+
 fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
     if (info_fsm.input(packet.command)) |action| {
         switch (action) {
@@ -68,8 +70,10 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 defer objects.deinit(allocator);
                 const stores_response = try nsof.decode(reader, &objects, allocator);
                 try stores.save(stores_response, allocator);
-                try stores.setCurrent(allocator);
-                stores.current += 1;
+                if (stores.store_list.first) |first_store| {
+                    current_store = first_store;
+                    try stores.setCurrent(&first_store.data, allocator);
+                } else unreachable;
             },
             .get_soup_names => {
                 const dock_packet = try DockPacket.init(.get_soup_names, .out, &.{}, allocator);
@@ -81,9 +85,9 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 defer objects.deinit(allocator);
                 const soup_names = try nsof.decode(reader, &objects, allocator);
                 try soup_names.write(std.io.getStdOut().writer());
-                if (stores.current < stores.stores.len) {
-                    try stores.setCurrent(allocator);
-                    stores.current += 1;
+                if (current_store.next) |next_store| {
+                    current_store = next_store;
+                    try stores.setCurrent(&next_store.data, allocator);
                     info_fsm.state = .selecting_store;
                 } else {
                     const dock_packet = try DockPacket.init(.get_app_names, .out, &.{ 0, 0, 0, 0 }, allocator);

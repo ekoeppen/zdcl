@@ -12,37 +12,36 @@ pub const Store = struct {
     signature: i32 = 0,
 };
 
-pub var current: usize = undefined;
-pub var stores: []Store = undefined;
+pub const StoreList = std.SinglyLinkedList(Store);
+pub var store_list: StoreList = .{};
 
 pub fn save(stores_response: *nsof.NSObject, allocator: std.mem.Allocator) !void {
-    stores = try allocator.alloc(Store, stores_response.plainArray.len);
-    for (stores_response.plainArray) |s, i| {
+    for (stores_response.plainArray) |s| {
+        const node = try allocator.create(StoreList.Node);
         if (s.getSlot("name")) |name| {
-            stores[i].name = try allocator.alloc(u16, name.string.len);
-            std.mem.copy(u16, stores[i].name, name.string);
+            node.data.name = try allocator.alloc(u16, name.string.len);
+            std.mem.copy(u16, node.data.name, name.string);
         }
         if (s.getSlot("kind")) |kind| {
-            stores[i].kind = try allocator.alloc(u16, kind.string.len);
-            std.mem.copy(u16, stores[i].kind, kind.string);
+            node.data.kind = try allocator.alloc(u16, kind.string.len);
+            std.mem.copy(u16, node.data.kind, kind.string);
         }
         if (s.getSlot("signature")) |signature| {
-            stores[i].signature = nsof.refToInt(signature.immediate).?;
+            node.data.signature = nsof.refToInt(signature.immediate).?;
         }
+        store_list.prepend(node);
     }
-    current = 0;
 }
 
 pub fn deinit(allocator: std.mem.Allocator) void {
-    for (stores) |store| {
-        allocator.free(store.kind);
-        allocator.free(store.name);
+    while (store_list.popFirst()) |node| {
+        allocator.free(node.data.name);
+        allocator.free(node.data.kind);
+        allocator.destroy(node);
     }
-    allocator.free(stores);
 }
 
-pub fn setCurrent(allocator: std.mem.Allocator) !void {
-    const store = stores[current];
+pub fn setCurrent(store: *Store, allocator: std.mem.Allocator) !void {
     var data: []u8 = try allocator.alloc(u8, store.name.len + store.kind.len + 128);
     defer allocator.free(data);
     var fbs = std.io.fixedBufferStream(data);
