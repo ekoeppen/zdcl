@@ -68,8 +68,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const stores_response = try nsof.decode(reader, &objects, allocator);
-                try stores.save(stores_response, allocator);
+                try stores.save(try objects.decode(reader, allocator), allocator);
                 if (stores.store_list.first) |first_store| {
                     current_store = first_store;
                     try stores.setCurrent(&first_store.data, allocator);
@@ -83,7 +82,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const soup_names = try nsof.decode(reader, &objects, allocator);
+                const soup_names = try objects.decode(reader, allocator);
                 try soup_names.write(std.io.getStdOut().writer());
                 if (current_store.next) |next_store| {
                     current_store = next_store;
@@ -99,7 +98,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const app_names = try nsof.decode(reader, &objects, allocator);
+                const app_names = try objects.decode(reader, allocator);
                 try app_names.write(std.io.getStdOut().writer());
                 const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });

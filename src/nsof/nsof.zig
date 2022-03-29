@@ -1,7 +1,7 @@
 const std = @import("std");
 const hexdump = @import("../utils/hexdump.zig");
 
-const NSObjectTag = enum(u8) { //
+const NSObjectTag = enum(u8) {
     immediate = 0,
     character = 1,
     uniChar = 2,
@@ -157,29 +157,6 @@ pub const NSObject = union(NSObjectTag) {
     }
 };
 
-pub const NSObjectSet = struct {
-    objects: std.ArrayList(*NSObject) = undefined,
-
-    pub fn init(allocator: std.mem.Allocator) NSObjectSet {
-        return NSObjectSet{
-            .objects = std.ArrayList(*NSObject).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *NSObjectSet, allocator: std.mem.Allocator) void {
-        for (self.objects.items) |object| object.deinit(allocator);
-        self.objects.deinit();
-    }
-
-    pub fn append(self: *NSObjectSet, object: *NSObject) !void {
-        try self.objects.append(object);
-    }
-
-    pub fn item(self: *NSObjectSet, index: usize) *NSObject {
-        return self.objects.items[index];
-    }
-};
-
 fn decodeXlong(reader: anytype) !u32 {
     var r: u32 = try reader.readByte();
     if (r < 255) {
@@ -209,83 +186,6 @@ pub fn refToInt(ref: u32) ?i32 {
 pub fn intToRef(n: i32) ?u32 {
     if (n > 536870911 or n < -536870912) return null;
     return if (n > 0) @bitCast(u32, n) << 2 else @bitCast(u32, -n) << 2 | 0x80000000;
-}
-
-pub fn decode(reader: anytype, objects: *NSObjectSet, allocator: std.mem.Allocator) anyerror!*NSObject {
-    var o: *NSObject = undefined;
-    const tag = @intToEnum(NSObjectTag, try reader.readByte());
-    if (tag != .precedent) {
-        o = try allocator.create(NSObject);
-        try objects.append(o);
-    }
-    switch (tag) {
-        .immediate => o.* = NSObject{ .immediate = try decodeXlong(reader) },
-        .character => o.* = NSObject{ .character = try reader.readByte() },
-        .uniChar => o.* = NSObject{ .uniChar = try reader.readIntBig(u16) },
-        .binary => {
-            const length = try decodeXlong(reader);
-            var class = try decode(reader, objects, allocator);
-            var data = try allocator.alloc(u8, @intCast(usize, length));
-            _ = try reader.read(data);
-            o.* = NSObject{ .binary = .{ .class = class, .data = data } };
-        },
-        .array => {
-            const count = try decodeXlong(reader);
-            var class = try decode(reader, objects, allocator);
-            var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
-            for (elements) |_, i| {
-                elements[i] = try decode(reader, objects, allocator);
-            }
-            o.* = NSObject{ .array = .{ .class = class, .slots = elements } };
-        },
-        .plainArray => {
-            const count = try decodeXlong(reader);
-            var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
-            for (elements) |_, i| {
-                elements[i] = try decode(reader, objects, allocator);
-            }
-            o.* = NSObject{ .plainArray = elements };
-        },
-        .frame => {
-            const count = try decodeXlong(reader);
-            var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
-            var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
-            for (tags) |_, i| {
-                tags[i] = try decode(reader, objects, allocator);
-            }
-            for (slots) |_, i| {
-                slots[i] = try decode(reader, objects, allocator);
-            }
-            o.* = NSObject{ .frame = .{ .tags = tags, .slots = slots } };
-        },
-        .symbol => {
-            const length = try decodeXlong(reader);
-            var symbol = try allocator.alloc(u8, @intCast(usize, length));
-            _ = try reader.read(symbol);
-            o.* = NSObject{ .symbol = symbol };
-        },
-        .string => {
-            const length = try decodeXlong(reader);
-            const string_data: []u16 = try allocator.alloc(u16, @intCast(usize, length) / 2);
-            for (string_data) |_, i| {
-                string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
-            }
-            o.* = NSObject{ .string = string_data };
-        },
-        .precedent => o = objects.item(@intCast(usize, try decodeXlong(reader))),
-        .nil => o.* = NSObject{ .nil = 0 },
-        .smallRect => o.* = NSObject{ .smallRect = .{
-            .top = try reader.readByte(),
-            .left = try reader.readByte(),
-            .right = try reader.readByte(),
-            .bottom = try reader.readByte(),
-        } },
-        else => |_| {
-            std.log.err("Invalid object tag {}", .{tag});
-            return error.InvalidArgument;
-        },
-    }
-    return o;
 }
 
 pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
@@ -350,6 +250,98 @@ pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
     }
 }
 
+pub const NSObjectSet = struct {
+    objects: std.ArrayList(*NSObject) = undefined,
+
+    pub fn init(allocator: std.mem.Allocator) NSObjectSet {
+        return NSObjectSet{
+            .objects = std.ArrayList(*NSObject).init(allocator),
+        };
+    }
+
+    pub fn deinit(self: *NSObjectSet, allocator: std.mem.Allocator) void {
+        for (self.objects.items) |object| object.deinit(allocator);
+        self.objects.deinit();
+    }
+
+    pub fn decode(self: *NSObjectSet, reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject {
+        var o: *NSObject = undefined;
+        const tag = @intToEnum(NSObjectTag, try reader.readByte());
+        if (tag != .precedent) {
+            o = try allocator.create(NSObject);
+            try self.objects.append(o);
+        }
+        switch (tag) {
+            .immediate => o.* = NSObject{ .immediate = try decodeXlong(reader) },
+            .character => o.* = NSObject{ .character = try reader.readByte() },
+            .uniChar => o.* = NSObject{ .uniChar = try reader.readIntBig(u16) },
+            .binary => {
+                const length = try decodeXlong(reader);
+                var class = try self.decode(reader, allocator);
+                var data = try allocator.alloc(u8, @intCast(usize, length));
+                _ = try reader.read(data);
+                o.* = NSObject{ .binary = .{ .class = class, .data = data } };
+            },
+            .array => {
+                const count = try decodeXlong(reader);
+                var class = try self.decode(reader, allocator);
+                var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+                for (elements) |_, i| {
+                    elements[i] = try self.decode(reader, allocator);
+                }
+                o.* = NSObject{ .array = .{ .class = class, .slots = elements } };
+            },
+            .plainArray => {
+                const count = try decodeXlong(reader);
+                var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+                for (elements) |_, i| {
+                    elements[i] = try self.decode(reader, allocator);
+                }
+                o.* = NSObject{ .plainArray = elements };
+            },
+            .frame => {
+                const count = try decodeXlong(reader);
+                var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
+                var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
+                for (tags) |_, i| {
+                    tags[i] = try self.decode(reader, allocator);
+                }
+                for (slots) |_, i| {
+                    slots[i] = try self.decode(reader, allocator);
+                }
+                o.* = NSObject{ .frame = .{ .tags = tags, .slots = slots } };
+            },
+            .symbol => {
+                const length = try decodeXlong(reader);
+                var symbol = try allocator.alloc(u8, @intCast(usize, length));
+                _ = try reader.read(symbol);
+                o.* = NSObject{ .symbol = symbol };
+            },
+            .string => {
+                const length = try decodeXlong(reader);
+                const string_data: []u16 = try allocator.alloc(u16, @intCast(usize, length) / 2);
+                for (string_data) |_, i| {
+                    string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
+                }
+                o.* = NSObject{ .string = string_data };
+            },
+            .precedent => o = self.objects.items[@intCast(usize, try decodeXlong(reader))],
+            .nil => o.* = NSObject{ .nil = 0 },
+            .smallRect => o.* = NSObject{ .smallRect = .{
+                .top = try reader.readByte(),
+                .left = try reader.readByte(),
+                .right = try reader.readByte(),
+                .bottom = try reader.readByte(),
+            } },
+            else => |_| {
+                std.log.err("Invalid object tag {}", .{tag});
+                return error.InvalidArgument;
+            },
+        }
+        return o;
+    }
+};
+
 test "Decode XLong" {
     const data: []const u8 = &.{ 0, 1, 254, 255, 0, 0, 1, 0 };
     const s = std.io.fixedBufferStream(data).reader();
@@ -390,22 +382,22 @@ test "Decode simple types" {
     };
     const s = std.io.fixedBufferStream(data).reader();
 
-    const nil = decode(&s, &objects, gpa.allocator());
+    const nil = objects.decode(&s, gpa.allocator());
     std.debug.print("\n{s}\n", .{nil});
 
-    const character = decode(&s, &objects, gpa.allocator());
+    const character = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{character});
 
-    const uniChar = decode(&s, &objects, gpa.allocator());
+    const uniChar = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{uniChar});
 
-    const symbol = decode(&s, &objects, gpa.allocator());
+    const symbol = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{symbol});
 
-    const string = decode(&s, &objects, gpa.allocator());
+    const string = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{string});
 
-    const precendent = decode(&s, &objects, gpa.allocator());
+    const precendent = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{precendent});
 
     objects.deinit(gpa.allocator());
@@ -423,16 +415,16 @@ test "Decode compound types" {
     };
     const s = std.io.fixedBufferStream(data).reader();
 
-    const binary = try decode(&s, &objects, gpa.allocator());
+    const binary = try objects.decode(&s, gpa.allocator());
     std.debug.print("\n{}\n", .{binary});
 
-    const plainArray = try decode(&s, &objects, gpa.allocator());
+    const plainArray = try objects.decode(&s, gpa.allocator());
     std.debug.print("{}\n", .{plainArray});
 
-    const array = try decode(&s, &objects, gpa.allocator());
+    const array = try objects.decode(&s, gpa.allocator());
     std.debug.print("{}\n", .{array});
 
-    const precendent = decode(&s, &objects, gpa.allocator());
+    const precendent = objects.decode(&s, gpa.allocator());
     std.debug.print("{s}\n", .{precendent});
 
     objects.deinit(gpa.allocator());
@@ -520,7 +512,7 @@ test "Roundtrip encoding/decoding" {
     } }, writer);
     hexdump.debug(data[start..try fbs.getPos()]);
     fbs.reset();
-    const o = try decode(reader, &objects, arena.allocator());
+    const o = try objects.decode(reader, arena.allocator());
     var buffer: [1024]u8 = undefined;
     var fb = std.io.fixedBufferStream(&buffer);
     try o.write(fb.writer());

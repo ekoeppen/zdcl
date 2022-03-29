@@ -42,7 +42,7 @@ fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
     _ = try reader.readByte();
     var objects = NSObjectSet.init(allocator);
     defer objects.deinit(allocator);
-    const o = try nsof.decode(reader, &objects, allocator);
+    const o = try objects.decode(reader, allocator);
     try o.write(std.io.getStdOut().writer());
 }
 

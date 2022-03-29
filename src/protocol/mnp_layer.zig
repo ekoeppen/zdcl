@@ -66,7 +66,7 @@ fn handleLinkRequest(packet: SerialPacket, allocator: std.mem.Allocator) !void {
     data_phase_opt = packet.data[23];
     max_info_field = if (data_phase_opt & 1 == 1) 256 else @intCast(u16, packet.data[19]) * 256 + packet.data[20];
     var response = try SerialPacket.init(.out, &.{
-        23, LR, 2, 1, 6, 1, 0, 0, 0,  0, 255, //
+        23, LR, 2, 1, 6, 1, 0, 0, 0,  0, 255,
         2,  1,  2, 3, 1, 8, 4, 2, 64, 0, 8,
         1,  3,
     }, allocator);

@@ -6,7 +6,12 @@ var active_packet: event_queue.DockPacket = .{};
 fn handleIncomingPacket(packet: event_queue.MnpPacket, allocator: std.mem.Allocator) !void {
     if (active_packet.length == 0) {
         const length = std.mem.readInt(u32, packet.data[12..16], .Big);
-        active_packet = try event_queue.DockPacket.init(@intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)), .in, packet.data[16..packet.length], allocator);
+        active_packet = try event_queue.DockPacket.init(
+            @intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)),
+            .in,
+            packet.data[16..packet.length],
+            allocator,
+        );
         active_packet.length = length;
     } else {
         const current = active_packet.data.len;
