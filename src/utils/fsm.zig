@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub fn Action(comptime E: type, comptime S: type, comptime A: type) type {
     return struct {
         event: ?E = null,

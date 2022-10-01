@@ -140,7 +140,7 @@ pub const NSObject = union(NSObjectTag) {
             },
             .precedent => |o| try f(writer, "prec: {d}", .{o}),
             .nil => try f(writer, "nil", .{}),
-            .smallRect => |o| try f(writer, "[{d}]", .{o}),
+            .smallRect => |o| try f(writer, "[{}]", .{o}),
         }
     }
 

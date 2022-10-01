@@ -55,7 +55,7 @@ const common_args = .{
     .verbose = verbose_arg,
 };
 
-const cli_commands = .{ //
+const cli_commands = .{
     .help = .{
         .name = "help",
         .help = "Get general help",
@@ -86,7 +86,7 @@ const LogLayer = struct {
             return;
         }
         std.debug.print("=====================================================\n", .{});
-        std.debug.print("{s}\n", .{event});
+        std.debug.print("{}\n", .{event});
     }
 };
 
@@ -134,12 +134,15 @@ fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Co
     } else if (std.mem.eql(u8, parsed_args.command, cli_commands.info.name)) {
         command = .{ .info = true };
         connect_module.session_type = .setting_up;
-    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.info.name)) {
+    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.load.name)) {
         const file_name = parsed_args.parameters.items[0];
         const fd = try std.os.open(file_name, std.os.O.RDONLY, 0);
         defer std.os.close(fd);
         const file_stat = try std.os.fstat(fd);
-        var package_data = try allocator.alloc(u8, @intCast(u32, (file_stat.size + 3) & 0xfffffffc));
+        var package_data = try allocator.alloc(
+            u8,
+            @intCast(u32, (file_stat.size + 3) & 0xfffffffc),
+        );
         _ = try std.os.read(fd, package_data);
         command = .{ .load = .{ .file = file_name, .data = package_data } };
         connect_module.session_type = .load_package;

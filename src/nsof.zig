@@ -38,7 +38,8 @@ fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
     var nsof_data = try allocator.alloc(u8, @intCast(u32, file_stat.size));
     _ = try std.os.read(fd, nsof_data);
     hexdump.debug(nsof_data);
-    const reader = std.io.fixedBufferStream(nsof_data).reader();
+    var fbs = std.io.fixedBufferStream(nsof_data);
+    var reader = fbs.reader();
     _ = try reader.readByte();
     var objects = NSObjectSet.init(allocator);
     defer objects.deinit(allocator);
@@ -50,7 +51,6 @@ pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     var allocator = arena.allocator();
-    _ = allocator;
     var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
     if (std.mem.eql(u8, parsed_args.command, cli_commands.decode.name)) {
         try decode(parsed_args.parameters.items[0], allocator);

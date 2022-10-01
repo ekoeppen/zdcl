@@ -65,12 +65,12 @@ var send_fsm: fsm.Fsm(event_queue.DockCommand, State, Action) = .{
 
 fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Allocator) !void {
     if (send_fsm.input(packet.command)) |action| {
+        var fbs = std.io.fixedBufferStream(packet.data[1..]);
         switch (action) {
             .select_store => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                try stores.save(try objects.decode(reader, allocator), allocator);
+                try stores.save(try objects.decode(fbs.reader(), allocator), allocator);
                 if (stores.store_list.first) |first_store| {
                     current_store = first_store;
                     try stores.setCurrent(&first_store.data, allocator);
@@ -89,10 +89,9 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .save_entry => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const entry = try objects.decode(reader, allocator);
+                const entry = try objects.decode(fbs.reader(), allocator);
                 const uniqueId = if (entry.getSlot("_uniqueID")) |slot|
                     (nsof.refToInt(slot.immediate) orelse 0)
                 else
@@ -123,7 +122,6 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
 }
 
 pub fn processEvent(event: event_queue.StackEvent, soup: []const u8, allocator: std.mem.Allocator) !void {
-    _ = soup;
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
             var dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);

@@ -69,7 +69,6 @@ fn handleDockCommand(packet: DockPacket, data: []const u8, allocator: std.mem.Al
 }
 
 pub fn processEvent(event: event_queue.StackEvent, data: []const u8, allocator: std.mem.Allocator) !void {
-    _ = data;
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
             var dock_packet = try DockPacket.init(.request_to_install, .out, &.{}, allocator);

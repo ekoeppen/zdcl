@@ -179,12 +179,21 @@ pub const SerialPacket = struct {
     data: []u8 = undefined,
     length: u32 = undefined,
 
-    pub fn format(self: SerialPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: SerialPacket,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.length });
         try hexdump.toWriter(self.data, writer);
     }
 
-    pub fn init(direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !SerialPacket {
+    pub fn init(
+        direction: EventDirection,
+        data: []const u8,
+        allocator: std.mem.Allocator,
+    ) !SerialPacket {
         var packet: SerialPacket = .{ .direction = direction };
         try setPacketData(SerialPacket, &packet, data, allocator);
         return packet;
@@ -200,7 +209,12 @@ pub const MnpPacket = struct {
     data: []u8 = undefined,
     length: u32 = undefined,
 
-    pub fn format(self: MnpPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: MnpPacket,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         try std.fmt.format(writer, "{}\n", .{self.direction});
         try hexdump.toWriter(self.data, writer);
     }
@@ -222,12 +236,22 @@ pub const DockPacket = struct {
     length: u32 = undefined,
     data: []u8 = undefined,
 
-    pub fn format(self: DockPacket, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: DockPacket,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.command });
         try hexdump.toWriter(self.data, writer);
     }
 
-    pub fn init(command: DockCommand, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !DockPacket {
+    pub fn init(
+        command: DockCommand,
+        direction: EventDirection,
+        data: []const u8,
+        allocator: std.mem.Allocator,
+    ) !DockPacket {
         var packet: DockPacket = .{ .direction = direction, .command = command };
         try setPacketData(DockPacket, &packet, data, allocator);
         return packet;
@@ -244,12 +268,22 @@ pub const AppEvent = struct {
     length: u32 = undefined,
     data: []u8 = undefined,
 
-    pub fn format(self: AppEvent, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: AppEvent,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         try std.fmt.format(writer, "{} {}\n", .{ self.direction, self.event });
         try hexdump.toWriter(self.data[0..(if (self.length < 64) self.length else 64)], writer);
     }
 
-    pub fn init(event: AppEventType, direction: EventDirection, data: []const u8, allocator: std.mem.Allocator) !AppEvent {
+    pub fn init(
+        event: AppEventType,
+        direction: EventDirection,
+        data: []const u8,
+        allocator: std.mem.Allocator,
+    ) !AppEvent {
         var packet: AppEvent = .{ .direction = direction, .event = event };
         try setPacketData(AppEvent, &packet, data, allocator);
         return packet;

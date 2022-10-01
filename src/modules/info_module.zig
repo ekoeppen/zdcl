@@ -63,12 +63,12 @@ var current_store: *stores.StoreList.Node = undefined;
 
 fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
     if (info_fsm.input(packet.command)) |action| {
+        var fbs = std.io.fixedBufferStream(packet.data[1..]);
         switch (action) {
             .select_store => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                try stores.save(try objects.decode(reader, allocator), allocator);
+                try stores.save(try objects.decode(fbs.reader(), allocator), allocator);
                 if (stores.store_list.first) |first_store| {
                     current_store = first_store;
                     try stores.setCurrent(&first_store.data, allocator);
@@ -79,10 +79,9 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .show_soup_names => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const soup_names = try objects.decode(reader, allocator);
+                const soup_names = try objects.decode(fbs.reader(), allocator);
                 try soup_names.write(std.io.getStdOut().writer());
                 if (current_store.next) |next_store| {
                     current_store = next_store;
@@ -95,10 +94,9 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 }
             },
             .show_app_list => {
-                const reader = std.io.fixedBufferStream(packet.data[1..]).reader();
                 var objects = NSObjectSet.init(allocator);
                 defer objects.deinit(allocator);
-                const app_names = try objects.decode(reader, allocator);
+                const app_names = try objects.decode(fbs.reader(), allocator);
                 try app_names.write(std.io.getStdOut().writer());
                 const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });

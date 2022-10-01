@@ -9,7 +9,7 @@ pub const Arg = struct {
         present: bool,
         number: i32,
         boolean: bool,
-        string: []u8,
+        string: []const u8,
     } = .{ .present = false },
 
     pub fn matches(self: *const Arg, parameter: []const u8) bool {
@@ -22,19 +22,23 @@ pub const Arg = struct {
         return false;
     }
 
-    pub fn setFromIter(self: *Arg, iter: *std.process.ArgIterator, allocator: std.mem.Allocator) !void {
+    pub fn setFromIter(
+        self: *Arg,
+        iter: *std.process.ArgIterator,
+        allocator: std.mem.Allocator,
+    ) !void {
         switch (self.value) {
             .number => {
-                var arg = try iter.next(allocator) orelse {
-                    std.log.err("Missing argument for {s} {s}", .{ self.short, self.long });
+                var arg = iter.next() orelse {
+                    std.log.err("Missing argument for {s}", .{self.name});
                     return error.InvalidArgs;
                 };
                 defer allocator.free(arg);
                 self.value = .{ .number = try std.fmt.parseInt(i32, arg, 10) };
             },
             .string => {
-                var arg = try iter.next(allocator) orelse {
-                    std.log.err("Missing argument for {s} {s}", .{ self.short, self.long });
+                var arg = iter.next() orelse {
+                    std.log.err("Missing argument for {s}", .{self.name});
                     return error.InvalidArgs;
                 };
                 self.value = .{ .string = arg };
@@ -45,64 +49,61 @@ pub const Arg = struct {
     }
 };
 
-pub const Command = struct {
-    name: []const u8,
-    help: []const u8,
-    args: anytype,
-};
-
 pub const ParsedArgs = struct {
-    command: []u8 = undefined,
+    command: []const u8 = undefined,
     args: std.StringHashMap(Arg) = undefined,
-    parameters: std.ArrayList([]u8) = undefined,
+    parameters: std.ArrayList([]const u8) = undefined,
 };
 
-pub fn process(comptime commands: anytype, comptime common_args: anytype, allocator: std.mem.Allocator) !ParsedArgs {
+pub fn process(
+    comptime commands: anytype,
+    comptime common_args: anytype,
+    allocator: std.mem.Allocator,
+) !ParsedArgs {
     var parsed_args: ParsedArgs = .{};
     parsed_args.args = std.StringHashMap(Arg).init(allocator);
-    parsed_args.parameters = std.ArrayList([]u8).init(allocator);
-    var iter = std.process.args();
+    parsed_args.parameters = std.ArrayList([]const u8).init(allocator);
+    var iter = try std.process.argsWithAllocator(allocator);
     _ = iter.skip();
-    var cmd = try iter.next(allocator) orelse {
+    var cmd = iter.next() orelse {
         std.log.err("No command given", .{});
         return error.InvalidArgument;
     };
-    const cmd_def = inline for (@typeInfo(@TypeOf(commands)).Struct.fields) |field| {
-        const cmd_definition: *const Command = &@field(commands, field.name);
-        if (std.mem.eql(u8, cmd, cmd_definition.name)) {
-            break cmd_definition;
+    inline for (std.meta.fields(@TypeOf(commands))) |f| {
+        const cmd_def = @field(commands, f.name);
+        if (std.mem.eql(u8, cmd, cmd_def.name)) {
+            parsed_args.command = cmd;
+            parse_args: while (true) {
+                var arg = iter.next() orelse {
+                    break :parse_args;
+                };
+                const defs = cmd_def.args;
+                inline for (@typeInfo(@TypeOf(defs)).Struct.fields) |field| {
+                    var arg_definition: Arg = @field(defs, field.name);
+                    if (arg_definition.matches(arg)) {
+                        try arg_definition.setFromIter(&iter, allocator);
+                        try parsed_args.args.put(arg_definition.name, arg_definition);
+                        allocator.free(arg);
+                        continue :parse_args;
+                    }
+                }
+                inline for (@typeInfo(@TypeOf(common_args)).Struct.fields) |field| {
+                    var arg_definition: Arg = @field(common_args, field.name);
+                    if (arg_definition.matches(arg)) {
+                        try arg_definition.setFromIter(&iter, allocator);
+                        try parsed_args.args.put(arg_definition.name, arg_definition);
+                        allocator.free(arg);
+                        continue :parse_args;
+                    }
+                }
+                try parsed_args.parameters.append(arg);
+            }
+            return parsed_args;
         }
     } else {
         std.log.err("Unknown command {s}", .{cmd});
         return error.InvalidArgument;
-    };
-    parsed_args.command = cmd;
-    parse_args: while (true) {
-        var arg = try iter.next(allocator) orelse {
-            break :parse_args;
-        };
-        const defs = cmd_def.args;
-        inline for (@typeInfo(@TypeOf(defs)).Struct.fields) |field| {
-            var arg_definition: Arg = @field(defs, field.name);
-            if (arg_definition.matches(arg)) {
-                try arg_definition.setFromIter(&iter, allocator);
-                try parsed_args.args.put(arg_definition.name, arg_definition);
-                allocator.free(arg);
-                continue :parse_args;
-            }
-        }
-        inline for (@typeInfo(@TypeOf(common_args)).Struct.fields) |field| {
-            var arg_definition: Arg = @field(common_args, field.name);
-            if (arg_definition.matches(arg)) {
-                try arg_definition.setFromIter(&iter, allocator);
-                try parsed_args.args.put(arg_definition.name, arg_definition);
-                allocator.free(arg);
-                continue :parse_args;
-            }
-        }
-        try parsed_args.parameters.append(arg);
     }
-    return parsed_args;
 }
 
 pub fn process_(comptime T: type, args: *T, allocator: std.mem.Allocator) !void {
