@@ -74,7 +74,14 @@ const cli_commands = .{
     .soup_export = .{
         .name = "export",
         .help = "Export soup",
-        .args = .{},
+        .args = .{
+            .{
+                .name = "convert",
+                .short = "-c",
+                .long = "--convert",
+                .value = .{ .string = "json" },
+            },
+        },
     },
 };
 

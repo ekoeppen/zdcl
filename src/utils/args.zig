@@ -105,20 +105,3 @@ pub fn process(
         return error.InvalidArgument;
     }
 }
-
-pub fn process_(comptime T: type, args: *T, allocator: std.mem.Allocator) !void {
-    var iter = std.process.args();
-    parse_args: while (true) {
-        var arg = try iter.next(allocator) orelse {
-            break :parse_args;
-        };
-        inline for (@typeInfo(T).Struct.fields) |field| {
-            var arg_definition: *Arg = &@field(args, field.name);
-            if (arg_definition.matches(arg)) {
-                try Arg.setFromIter(arg_definition, &iter, allocator);
-                continue :parse_args;
-            }
-        }
-        allocator.free(arg);
-    }
-}
