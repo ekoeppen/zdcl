@@ -101,7 +101,39 @@ pub fn process(
             return parsed_args;
         }
     } else {
-        std.log.err("Unknown command {s}", .{cmd});
-        return error.InvalidArgument;
+        std.log.err("Unknown command {s}\n", .{cmd});
+        try usage(common_args, commands, std.io.getStdErr().writer());
+        std.os.exit(1);
     }
+}
+
+fn usageArgs(
+    comptime indent: usize,
+    comptime args: anytype,
+    comptime writer: anytype,
+) !void {
+    inline for (std.meta.fields(@TypeOf(args))) |a| {
+        const arg_def = @field(args, a.name);
+        _ = try writer.print("{[0]s: >[1]}, {[2]s}: {[3]s}\n", .{
+            arg_def.short orelse "",
+            indent + 3,
+            arg_def.long orelse "",
+            arg_def.help orelse "",
+        });
+    }
+}
+
+pub fn usage(
+    comptime common_args: anytype,
+    comptime commands: anytype,
+    comptime writer: anytype,
+) !void {
+    _ = try writer.write("Commands:\n");
+    inline for (std.meta.fields(@TypeOf(commands))) |f| {
+        const cmd_def = @field(commands, f.name);
+        _ = try writer.print("   {s}: {s}\n", .{ cmd_def.name, cmd_def.help });
+        try usageArgs(6, cmd_def.args, writer);
+    }
+    _ = try writer.write("\nCommon flags for each command:\n");
+    try usageArgs(3, common_args, writer);
 }

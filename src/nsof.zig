@@ -17,18 +17,10 @@ const common_args = .{
     .help = help_arg,
 };
 
-const cli_commands = .{ //
-    .help = .{
-        .name = "help",
-        .help = "Get general help",
-        .args = .{},
-    },
+const cli_commands = .{
+    .help = .{ .name = "help", .help = "Get general help", .args = .{} },
     .encode = .{ .name = "encode", .help = "Encode to NSOF", .args = .{} },
-    .decode = .{
-        .name = "decode",
-        .help = "Decode from NSOF",
-        .args = .{},
-    },
+    .decode = .{ .name = "decode", .help = "Decode from NSOF", .args = .{} },
 };
 
 fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
@@ -54,6 +46,8 @@ pub fn main() anyerror!void {
     var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
     if (std.mem.eql(u8, parsed_args.command, cli_commands.decode.name)) {
         try decode(parsed_args.parameters.items[0], allocator);
+    } else if (std.mem.eql(u8, parsed_args.command, cli_commands.help.name)) {
+        try args.usage(common_args, cli_commands, std.io.getStdOut().writer());
     }
 }
 
