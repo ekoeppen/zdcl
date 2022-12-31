@@ -22,14 +22,14 @@ pub fn build(b: *std.build.Builder) void {
         znwt_run_cmd.addArgs(args);
     }
 
-    const znwt_run_step = b.step("run", "Run the app");
+    const znwt_run_step = b.step("run", "Run znwt");
     znwt_run_step.dependOn(&znwt_run_cmd.step);
 
     const znwt_tests = b.addTest("src/znwt.zig");
     znwt_tests.setTarget(target);
     znwt_tests.setBuildMode(mode);
 
-    const znwt_test_step = b.step("test", "Run unit tests");
+    const znwt_test_step = b.step("test", "Run unit tests for znwt");
     znwt_test_step.dependOn(&znwt_tests.step);
 
     const nsof = b.addExecutable("nsof", "src/nsof.zig");
@@ -43,13 +43,13 @@ pub fn build(b: *std.build.Builder) void {
         nsof_run_cmd.addArgs(args);
     }
 
-    const nsof_run_step = b.step("run", "Run the app");
+    const nsof_run_step = b.step("nsof", "Run nsof");
     nsof_run_step.dependOn(&nsof_run_cmd.step);
 
     const nsof_tests = b.addTest("src/nsof.zig");
     nsof_tests.setTarget(target);
     nsof_tests.setBuildMode(mode);
 
-    const nsof_test_step = b.step("test", "Run unit tests");
+    const nsof_test_step = b.step("nsof-test", "Run nsof unit tests");
     nsof_test_step.dependOn(&nsof_tests.step);
 }

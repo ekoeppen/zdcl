@@ -344,21 +344,22 @@ pub const NSObjectSet = struct {
 
 test "Decode XLong" {
     const data: []const u8 = &.{ 0, 1, 254, 255, 0, 0, 1, 0 };
-    const s = std.io.fixedBufferStream(data).reader();
+    var fbs = std.io.fixedBufferStream(data);
+    const s = fbs.reader();
     const zero = decodeXlong(&s);
-    std.debug.print("\n{}\n", .{zero});
+    std.debug.print("\n{!}\n", .{zero});
     const one = decodeXlong(&s);
-    std.debug.print("{}\n", .{one});
+    std.debug.print("{!}\n", .{one});
     const small = decodeXlong(&s);
-    std.debug.print("{}\n", .{small});
+    std.debug.print("{!}\n", .{small});
     const medium = decodeXlong(&s);
-    std.debug.print("{}\n", .{medium});
+    std.debug.print("{!}\n", .{medium});
 }
 
 test "Ref conversions" {
-    std.debug.print("\n{} {}\n", .{ refToInt(0xddd1bdb8), refToInt(0xed850484) });
-    std.debug.print("{} {}\n", .{ intToRef(-125071214), intToRef(-56705313) });
-    std.debug.print("{} {}\n", .{ intToRef(-393506670), intToRef(-459358497) });
+    std.debug.print("\n{?} {?}\n", .{ refToInt(0xddd1bdb8), refToInt(0xed850484) });
+    std.debug.print("{?} {?}\n", .{ intToRef(-125071214), intToRef(-56705313) });
+    std.debug.print("{?} {?}\n", .{ intToRef(-393506670), intToRef(-459358497) });
     try std.testing.expect(refToInt(1) == null);
     try std.testing.expect(refToInt(2) == null);
     try std.testing.expect(refToInt(3) == null);
@@ -380,25 +381,26 @@ test "Decode simple types" {
         10, 1, 65,   2,   0x10, 0x01, 7,    4,   'n', 'a', 'm', 'e', //
         8,  6, 0x00, 'A', 0x00, 'B',  0x00, 'C', 9,   3,
     };
-    const s = std.io.fixedBufferStream(data).reader();
+    var fbs = std.io.fixedBufferStream(data);
+    const s = fbs.reader();
 
     const nil = objects.decode(&s, gpa.allocator());
-    std.debug.print("\n{s}\n", .{nil});
+    std.debug.print("\n{!}\n", .{nil});
 
     const character = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{character});
+    std.debug.print("{!}\n", .{character});
 
     const uniChar = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{uniChar});
+    std.debug.print("{!}\n", .{uniChar});
 
     const symbol = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{symbol});
+    std.debug.print("{!}\n", .{symbol});
 
     const string = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{string});
+    std.debug.print("{!}\n", .{string});
 
     const precendent = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{precendent});
+    std.debug.print("{!}\n", .{precendent});
 
     objects.deinit(gpa.allocator());
     _ = gpa.deinit();
@@ -413,19 +415,20 @@ test "Decode compound types" {
         0, 'B', 10, 4, 3,   7,   3,   'a', 'r', 'r', 0,
         2, 8,   4,  0, 'A', 0,   'B', 10,  9,   2,
     };
-    const s = std.io.fixedBufferStream(data).reader();
+    var fbs = std.io.fixedBufferStream(data);
+    const s = fbs.reader();
 
     const binary = try objects.decode(&s, gpa.allocator());
-    std.debug.print("\n{}\n", .{binary});
+    std.debug.print("\n{!}\n", .{binary});
 
     const plainArray = try objects.decode(&s, gpa.allocator());
-    std.debug.print("{}\n", .{plainArray});
+    std.debug.print("{!}\n", .{plainArray});
 
     const array = try objects.decode(&s, gpa.allocator());
-    std.debug.print("{}\n", .{array});
+    std.debug.print("{!}\n", .{array});
 
     const precendent = objects.decode(&s, gpa.allocator());
-    std.debug.print("{s}\n", .{precendent});
+    std.debug.print("{!}\n", .{precendent});
 
     objects.deinit(gpa.allocator());
     _ = gpa.deinit();
