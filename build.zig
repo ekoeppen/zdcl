@@ -1,14 +1,9 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
+pub fn build(b: *std.build.Builder) !void {
+    const stderr = std.io.getStdErr().writer();
     const target = b.standardTargetOptions(.{});
-
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
+    const target_info = try std.zig.system.NativeTargetInfo.detect(target);
     const mode = b.standardReleaseOptions();
 
     const znwt = b.addExecutable("znwt", "src/znwt.zig");
@@ -28,6 +23,14 @@ pub fn build(b: *std.build.Builder) void {
     const znwt_tests = b.addTest("src/znwt.zig");
     znwt_tests.setTarget(target);
     znwt_tests.setBuildMode(mode);
+    switch (target_info.target.os.tag) {
+        .linux => znwt.addPackagePath("serial", "src/utils/serial_linux.zig"),
+        .macos => znwt.addPackagePath("serial", "src/utils/serial_macos.zig"),
+        else => {
+            try stderr.print("\nUnsupported target: {}\n", .{target_info.target.os.tag});
+            return error.NotSupported;
+        },
+    }
 
     const znwt_test_step = b.step("test", "Run unit tests for znwt");
     znwt_test_step.dependOn(&znwt_tests.step);

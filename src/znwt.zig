@@ -9,6 +9,7 @@ const info_module = @import("./modules/info_module.zig");
 const send_soup_module = @import("./modules/send_soup_module.zig");
 const event_queue = @import("./protocol/event_queue.zig");
 const args = @import("./utils/args.zig");
+const serial = @import("serial");
 
 const Command = union(enum) {
     load: struct { file: []const u8, data: []const u8 = undefined },
@@ -129,9 +130,11 @@ fn commandLoop() void {
     }
 }
 
-fn openPort(arg: ?args.Arg) !std.os.fd_t {
-    var port = if (arg) |a| a.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
-    return try std.os.open(port, std.os.O.RDWR, 0);
+fn openPort(port: ?args.Arg, speed: ?args.Arg) !std.os.fd_t {
+    var port_file = if (port) |p| p.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
+    const fd = try std.os.open(port_file, std.os.O.RDWR, 0);
+    try serial.setSpeed(fd, if (speed) |s| @intCast(u32, s.value.number) else 38400);
+    return fd;
 }
 
 fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Command {
@@ -170,7 +173,7 @@ pub fn main() anyerror!void {
     var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
 
     var command = try setupCommand(&parsed_args, arena.allocator());
-    var file = try openPort(parsed_args.args.get("port"));
+    var file = try openPort(parsed_args.args.get("port"), parsed_args.args.get("speed"));
     defer std.os.close(file);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
