@@ -122,7 +122,7 @@ pub const NSObject = union(NSObjectTag) {
             },
             .frame => |o| {
                 try f(writer, "{{", .{});
-                for (o.tags) |_, i| {
+                for (o.tags, 0..) |_, i| {
                     try o.tags[i].write(writer);
                     try f(writer, ": ", .{});
                     try o.slots[i].write(writer);
@@ -147,7 +147,7 @@ pub const NSObject = union(NSObjectTag) {
     pub fn getSlot(self: *const NSObject, slot_name: []const u8) ?*const NSObject {
         switch (self.*) {
             .frame => |frame| {
-                const slot = for (frame.tags) |tag, i| {
+                const slot = for (frame.tags, 0..) |tag, i| {
                     if (std.mem.eql(u8, slot_name, tag.symbol)) break self.frame.slots[i];
                 } else null;
                 return slot;
@@ -286,7 +286,7 @@ pub const NSObjectSet = struct {
                 const count = try decodeXlong(reader);
                 var class = try self.decode(reader, allocator);
                 var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
-                for (elements) |_, i| {
+                for (elements, 0..) |_, i| {
                     elements[i] = try self.decode(reader, allocator);
                 }
                 o.* = NSObject{ .array = .{ .class = class, .slots = elements } };
@@ -294,7 +294,7 @@ pub const NSObjectSet = struct {
             .plainArray => {
                 const count = try decodeXlong(reader);
                 var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
-                for (elements) |_, i| {
+                for (elements, 0..) |_, i| {
                     elements[i] = try self.decode(reader, allocator);
                 }
                 o.* = NSObject{ .plainArray = elements };
@@ -303,10 +303,10 @@ pub const NSObjectSet = struct {
                 const count = try decodeXlong(reader);
                 var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
                 var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
-                for (tags) |_, i| {
+                for (tags, 0..) |_, i| {
                     tags[i] = try self.decode(reader, allocator);
                 }
-                for (slots) |_, i| {
+                for (slots, 0..) |_, i| {
                     slots[i] = try self.decode(reader, allocator);
                 }
                 o.* = NSObject{ .frame = .{ .tags = tags, .slots = slots } };
@@ -320,7 +320,7 @@ pub const NSObjectSet = struct {
             .string => {
                 const length = try decodeXlong(reader);
                 const string_data: []u16 = try allocator.alloc(u16, @intCast(usize, length) / 2);
-                for (string_data) |_, i| {
+                for (string_data, 0..) |_, i| {
                     string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
                 }
                 o.* = NSObject{ .string = string_data };

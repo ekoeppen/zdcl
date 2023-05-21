@@ -78,7 +78,7 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
             },
             .select_soup => {
                 var soup_name = [_]u8{0} ** 52;
-                for (soup) |char, i| {
+                for (soup, 0..) |char, i| {
                     soup_name[i * 2 + 1] = char;
                 }
                 const dock_packet = try DockPacket.init(.set_current_soup, .out, soup_name[0 .. soup.len * 2 + 2], allocator);
@@ -101,7 +101,7 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                 var file = try std.fmt.bufPrint(&b, "entry{d}-{d}.nsof", .{
                     current_store.data.signature, uniqueId,
                 });
-                const fd = try std.os.open(file, std.os.O.CREAT | std.os.O.WRONLY, 0o664);
+                const fd = try std.os.open(file, std.os.O.CREAT | std.os.O.WRONLY, 0);
                 defer std.os.close(fd);
                 _ = try std.os.write(fd, packet.data);
             },

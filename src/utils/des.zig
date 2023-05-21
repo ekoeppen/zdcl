@@ -162,7 +162,7 @@ fn permuteBits(long: u64, indices: []const u8) u64 {
     const TL = math.Log2Int(u64);
 
     var out: u64 = 0;
-    for (indices) |x, i| {
+    for (indices, 0..) |x, i| {
         out ^= (((long >> @intCast(u6, x)) & 1) << @intCast(TL, i));
     }
     return out;
@@ -184,7 +184,7 @@ fn precomutePermutation(permutation: []const u8) [8][256]u64 {
 
 fn permuteBitsPrecomputed(long: u64, precomputedPerm: [8][256]u64) u64 {
     var out: u64 = 0;
-    for (precomputedPerm) |p, i| {
+    for (precomputedPerm, 0..) |p, i| {
         out ^= p[@truncate(u8, long >> @intCast(u6, i * 8))];
     }
     return out;
@@ -264,7 +264,7 @@ pub fn subkeys(keyBytes: []const u8) [16]u48 {
     var right: u28 = @truncate(u28, (perm >> 28) & 0xfffffff);
     var keys: [16]u48 = undefined;
 
-    for (shifts) |shift, i| {
+    for (shifts, 0..) |shift, i| {
         var subkey: u56 = math.rotr(u28, right, shift);
         subkey <<= 28;
         subkey ^= math.rotr(u28, left, shift);
