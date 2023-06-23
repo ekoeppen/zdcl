@@ -189,7 +189,7 @@ pub fn intToRef(n: i32) ?u32 {
 }
 
 pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
-    try writer.writeByte(@enumToInt(object.*));
+    try writer.writeByte(@intFromEnum(object.*));
     switch (object.*) {
         .immediate => |o| {
             try encodeXlong(o, writer);
@@ -266,7 +266,7 @@ pub const NSObjectSet = struct {
 
     pub fn decode(self: *NSObjectSet, reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject {
         var o: *NSObject = undefined;
-        const tag = @intToEnum(NSObjectTag, try reader.readByte());
+        const tag = @enumFromInt(NSObjectTag, try reader.readByte());
         if (tag != .precedent) {
             o = try allocator.create(NSObject);
             try self.objects.append(o);

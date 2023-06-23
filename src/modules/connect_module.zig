@@ -111,7 +111,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                     0, 0, 0, desktop_mac, //
                     0x64, 0x23, 0xef, 0x02, //
                     0xfb, 0xcd, 0xc5, 0xa5, //
-                    0, 0, 0, @enumToInt(SessionType.setting_up), //
+                    0, 0, 0, @intFromEnum(SessionType.setting_up), //
                     0, 0, 0, 1, //
                     0x02, 0x05, 0x01, 0x06, 0x03, 0x07, 0x02, 0x69, //
                     0x64, 0x07, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x07,

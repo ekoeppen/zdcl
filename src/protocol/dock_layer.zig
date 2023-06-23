@@ -7,7 +7,7 @@ fn handleIncomingPacket(packet: event_queue.MnpPacket, allocator: std.mem.Alloca
     if (active_packet.length == 0) {
         const length = std.mem.readInt(u32, packet.data[12..16], .Big);
         active_packet = try event_queue.DockPacket.init(
-            @intToEnum(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)),
+            @enumFromInt(event_queue.DockCommand, std.mem.readInt(u32, packet.data[8..12], .Big)),
             .in,
             packet.data[16..packet.length],
             allocator,
@@ -33,7 +33,7 @@ pub fn handleOutgoingPacket(packet: event_queue.DockPacket, allocator: std.mem.A
     mnp_packet.data = try allocator.alloc(u8, mnp_packet.length);
     @memset(mnp_packet.data, 0);
     std.mem.copy(u8, mnp_packet.data[0..8], &.{ 0x6e, 0x65, 0x77, 0x74, 0x64, 0x6f, 0x63, 0x6b });
-    std.mem.writeInt(u32, mnp_packet.data[8..12], @enumToInt(packet.command), .Big);
+    std.mem.writeInt(u32, mnp_packet.data[8..12], @intFromEnum(packet.command), .Big);
     std.mem.writeInt(u32, mnp_packet.data[12..16], packet.length, .Big);
     std.mem.copy(u8, mnp_packet.data[16..payload_length], packet.data[0..packet.length]);
     try event_queue.enqueue(.{ .mnp = mnp_packet });
