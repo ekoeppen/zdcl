@@ -27,7 +27,7 @@ fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
     const fd = try std.os.open(file, std.os.O.RDONLY, 0);
     defer std.os.close(fd);
     const file_stat = try std.os.fstat(fd);
-    var nsof_data = try allocator.alloc(u8, @intCast(u32, file_stat.size));
+    const nsof_data = try allocator.alloc(u8, @intCast(file_stat.size));
     _ = try std.os.read(fd, nsof_data);
     hexdump.debug(nsof_data);
     var fbs = std.io.fixedBufferStream(nsof_data);
@@ -42,8 +42,8 @@ fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var allocator = arena.allocator();
-    var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
+    const allocator = arena.allocator();
+    const parsed_args = try args.process(cli_commands, common_args, arena.allocator());
     if (std.mem.eql(u8, parsed_args.command, cli_commands.decode.name)) {
         try decode(parsed_args.parameters.items[0], allocator);
     } else if (std.mem.eql(u8, parsed_args.command, cli_commands.help.name)) {

@@ -163,7 +163,7 @@ fn permuteBits(long: u64, indices: []const u8) u64 {
 
     var out: u64 = 0;
     for (indices, 0..) |x, i| {
-        out ^= (((long >> @intCast(u6, x)) & 1) << @intCast(TL, i));
+        out ^= (((long >> @as(u6, @intCast(x))) & 1) << @as(TL, @intCast(i)));
     }
     return out;
 }
@@ -175,7 +175,7 @@ fn precomutePermutation(permutation: []const u8) [8][256]u64 {
     while (i < 8) : (i += 1) {
         var j: u64 = 0;
         while (j < 256) : (j += 1) {
-            var p: u64 = j << (@intCast(u6, i * 8));
+            const p: u64 = j << @as(u6, (@intCast(i * 8)));
             out[i][j] = permuteBits(p, permutation);
         }
     }
@@ -185,7 +185,7 @@ fn precomutePermutation(permutation: []const u8) [8][256]u64 {
 fn permuteBitsPrecomputed(long: u64, precomputedPerm: [8][256]u64) u64 {
     var out: u64 = 0;
     for (precomputedPerm, 0..) |p, i| {
-        out ^= p[@truncate(u8, long >> @intCast(u6, i * 8))];
+        out ^= p[@truncate(long >> @as(u6, @intCast(i * 8)))];
     }
     return out;
 }
@@ -218,7 +218,7 @@ fn permutePc2(long: u56) u56 {
         return permuteBits(long, &pc2);
     } else {
         const prepc2 = precomutePermutation(&pc2);
-        return @intCast(u56, permuteBitsPrecomputed(@as(u64, long), prepc2));
+        return @intCast(permuteBitsPrecomputed(@as(u64, long), prepc2));
     }
 }
 
@@ -226,11 +226,11 @@ pub fn cryptBlock(crypt_mode: CryptMode, keys: []const u48, dest: []u8, source: 
     assert(source.len == block_size);
     assert(dest.len >= block_size);
 
-    const dataLong = mem.readIntSliceBig(u64, source);
+    const dataLong = mem.readInt(u64, source[0..8], .big);
     const perm = initialPermutation(dataLong);
 
-    var left = @truncate(u32, perm & 0xFFFFFFFF);
-    var right = @truncate(u32, perm >> 32);
+    var left: u32 = @truncate(perm & 0xFFFFFFFF);
+    var right: u32 = @truncate(perm >> 32);
 
     var i: u8 = 0;
     while (i < 16) : (i += 1) {
@@ -238,8 +238,15 @@ pub fn cryptBlock(crypt_mode: CryptMode, keys: []const u48, dest: []u8, source: 
         const k = keys[if (crypt_mode == .Encrypt) i else (15 - i)];
         var work: u32 = 0;
 
-        work = s0[@truncate(u6, math.rotl(u32, r, 1)) ^ @truncate(u6, k)] ^ s1[@truncate(u6, r >> 3) ^ @truncate(u6, k >> 6)] ^ s2[@truncate(u6, r >> 7) ^ @truncate(u6, k >> 12)] ^ s3[@truncate(u6, r >> 11) ^ @truncate(u6, k >> 18)] ^ s4[@truncate(u6, r >> 15) ^ @truncate(u6, k >> 24)] ^ s5[@truncate(u6, r >> 19) ^ @truncate(u6, k >> 30)] ^ s6[@truncate(u6, r >> 23) ^ @truncate(u6, k >> 36)] ^ s7[@truncate(u6, math.rotr(u32, r, 1) >> 26) ^ @truncate(u6, k >> 42)];
-
+        work =
+            s0[@as(u6, @truncate(math.rotl(u32, r, 1))) ^ @as(u6, @truncate(k))] ^
+            s1[@as(u6, @truncate(r >> 3)) ^ @as(u6, @truncate(k >> 6))] ^
+            s2[@as(u6, @truncate(r >> 7)) ^ @as(u6, @truncate(k >> 12))] ^
+            s3[@as(u6, @truncate(r >> 11)) ^ @as(u6, @truncate(k >> 18))] ^
+            s4[@as(u6, @truncate(r >> 15)) ^ @as(u6, @truncate(k >> 24))] ^
+            s5[@as(u6, @truncate(r >> 19)) ^ @as(u6, @truncate(k >> 30))] ^
+            s6[@as(u6, @truncate(r >> 23)) ^ @as(u6, @truncate(k >> 36))] ^
+            s7[@as(u6, @truncate(math.rotr(u32, r, 1) >> 26)) ^ @as(u6, @truncate(k >> 42))];
         right = left ^ work;
         left = r;
     }
@@ -249,7 +256,7 @@ pub fn cryptBlock(crypt_mode: CryptMode, keys: []const u48, dest: []u8, source: 
     out ^= right;
     out = finalPermutation(out);
     const outBytes = mem.asBytes(&out);
-    mem.copy(u8, dest, outBytes);
+    mem.copyForwards(u8, dest, outBytes);
 }
 
 const shifts = [_]u32{ 1, 2, 4, 6, 8, 10, 12, 14, 15, 17, 19, 21, 23, 25, 27, 28 };
@@ -257,11 +264,11 @@ const shifts = [_]u32{ 1, 2, 4, 6, 8, 10, 12, 14, 15, 17, 19, 21, 23, 25, 27, 28
 pub fn subkeys(keyBytes: []const u8) [16]u48 {
     assert(keyBytes.len == block_size);
 
-    const key = mem.readIntSliceBig(u64, keyBytes);
-    const perm = @truncate(u56, permutePc1(key));
+    const key = mem.readInt(u64, keyBytes[0..8], .big);
+    const perm: u56 = @truncate(permutePc1(key));
 
-    var left: u28 = @truncate(u28, perm & 0xfffffff);
-    var right: u28 = @truncate(u28, (perm >> 28) & 0xfffffff);
+    const left: u28 = @truncate(perm & 0xfffffff);
+    const right: u28 = @truncate((perm >> 28) & 0xfffffff);
     var keys: [16]u48 = undefined;
 
     for (shifts, 0..) |shift, i| {
@@ -269,7 +276,7 @@ pub fn subkeys(keyBytes: []const u8) [16]u48 {
         subkey <<= 28;
         subkey ^= math.rotr(u28, left, shift);
         subkey = permutePc2(subkey);
-        keys[i] = @truncate(u48, subkey);
+        keys[i] = @truncate(subkey);
     }
 
     return keys;

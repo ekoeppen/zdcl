@@ -134,7 +134,7 @@ pub const NSObject = union(NSObjectTag) {
             .string => |o| {
                 try f(writer, "\"", .{});
                 for (o) |char| {
-                    try f(writer, "{c}", .{@truncate(u8, char)});
+                    try f(writer, "{c}", .{@as(u8, @truncate(char))});
                 }
                 try f(writer, "\"", .{});
             },
@@ -162,30 +162,30 @@ fn decodeXlong(reader: anytype) !u32 {
     if (r < 255) {
         return r;
     }
-    r = try reader.readIntBig(u32);
+    r = try reader.readInt(u32, .big);
     return r;
 }
 
 fn encodeXlong(xlong: u32, writer: anytype) !void {
     if (xlong >= 0 and xlong <= 254) {
-        try writer.writeByte(@intCast(u8, xlong));
+        try writer.writeByte(@intCast(xlong));
         return;
     }
     try writer.writeByte(255);
-    try writer.writeIntBig(u32, xlong);
+    try writer.writeInt(u32, xlong, .big);
 }
 
 pub fn refToInt(ref: u32) ?i32 {
     if (ref & 0x3 != 0) {
         return null;
     }
-    const n = @bitCast(i32, (ref >> 2) & 0x1fffffff);
+    const n: i32 = @bitCast((ref >> 2) & 0x1fffffff);
     return if (ref & 0x80000000 == 0) n else -n;
 }
 
 pub fn intToRef(n: i32) ?u32 {
     if (n > 536870911 or n < -536870912) return null;
-    return if (n > 0) @bitCast(u32, n) << 2 else @bitCast(u32, -n) << 2 | 0x80000000;
+    return if (n > 0) @as(u32, @bitCast(n)) << 2 else @as(u32, @bitCast(-n)) << 2 | 0x80000000;
 }
 
 pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
@@ -198,28 +198,28 @@ pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
             try writer.writeByte(o);
         },
         .uniChar => |o| {
-            try writer.writeIntBig(u16, o);
+            try writer.writeInt(u16, o, .big);
         },
         .binary => |o| {
-            try encodeXlong(@intCast(u32, o.data.len), writer);
+            try encodeXlong(@intCast(o.data.len), writer);
             try encode(o.class, writer);
             _ = try writer.write(o.data);
         },
         .array => |o| {
-            try encodeXlong(@intCast(u32, o.slots.len), writer);
+            try encodeXlong(@intCast(o.slots.len), writer);
             try encode(o.class, writer);
             for (o.slots) |slot| {
                 try encode(slot, writer);
             }
         },
         .plainArray => |o| {
-            try encodeXlong(@intCast(u32, o.len), writer);
+            try encodeXlong(@intCast(o.len), writer);
             for (o) |slot| {
                 try encode(slot, writer);
             }
         },
         .frame => |o| {
-            try encodeXlong(@intCast(u32, o.tags.len), writer);
+            try encodeXlong(@intCast(o.tags.len), writer);
             for (o.tags) |tag| {
                 try encode(tag, writer);
             }
@@ -228,17 +228,17 @@ pub fn encode(object: *const NSObject, writer: anytype) anyerror!void {
             }
         },
         .symbol => |o| {
-            try encodeXlong(@intCast(u32, o.len), writer);
+            try encodeXlong(@intCast(o.len), writer);
             _ = try writer.write(o);
         },
         .string => |o| {
-            try encodeXlong(@intCast(u32, o.len) * 2, writer);
+            try encodeXlong(@as(u32, @intCast(o.len)) * 2, writer);
             for (o) |char| {
-                try writer.writeIntBig(u16, char);
+                try writer.writeInt(u16, char, .big);
             }
         },
         .precedent => |o| {
-            try encodeXlong(@intCast(u32, o), writer);
+            try encodeXlong(@intCast(o), writer);
         },
         .nil => {},
         .smallRect => |o| {
@@ -266,7 +266,7 @@ pub const NSObjectSet = struct {
 
     pub fn decode(self: *NSObjectSet, reader: anytype, allocator: std.mem.Allocator) anyerror!*NSObject {
         var o: *NSObject = undefined;
-        const tag = @enumFromInt(NSObjectTag, try reader.readByte());
+        const tag: NSObjectTag = @enumFromInt(try reader.readByte());
         if (tag != .precedent) {
             o = try allocator.create(NSObject);
             try self.objects.append(o);
@@ -274,18 +274,18 @@ pub const NSObjectSet = struct {
         switch (tag) {
             .immediate => o.* = NSObject{ .immediate = try decodeXlong(reader) },
             .character => o.* = NSObject{ .character = try reader.readByte() },
-            .uniChar => o.* = NSObject{ .uniChar = try reader.readIntBig(u16) },
+            .uniChar => o.* = NSObject{ .uniChar = try reader.readInt(u16, .big) },
             .binary => {
                 const length = try decodeXlong(reader);
-                var class = try self.decode(reader, allocator);
-                var data = try allocator.alloc(u8, @intCast(usize, length));
+                const class = try self.decode(reader, allocator);
+                const data = try allocator.alloc(u8, @intCast(length));
                 _ = try reader.read(data);
                 o.* = NSObject{ .binary = .{ .class = class, .data = data } };
             },
             .array => {
                 const count = try decodeXlong(reader);
-                var class = try self.decode(reader, allocator);
-                var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+                const class = try self.decode(reader, allocator);
+                var elements = try allocator.alloc(*NSObject, @intCast(count));
                 for (elements, 0..) |_, i| {
                     elements[i] = try self.decode(reader, allocator);
                 }
@@ -293,7 +293,7 @@ pub const NSObjectSet = struct {
             },
             .plainArray => {
                 const count = try decodeXlong(reader);
-                var elements = try allocator.alloc(*NSObject, @intCast(usize, count));
+                var elements = try allocator.alloc(*NSObject, @intCast(count));
                 for (elements, 0..) |_, i| {
                     elements[i] = try self.decode(reader, allocator);
                 }
@@ -301,8 +301,8 @@ pub const NSObjectSet = struct {
             },
             .frame => {
                 const count = try decodeXlong(reader);
-                var tags = try allocator.alloc(*NSObject, @intCast(usize, count));
-                var slots = try allocator.alloc(*NSObject, @intCast(usize, count));
+                var tags = try allocator.alloc(*NSObject, @intCast(count));
+                var slots = try allocator.alloc(*NSObject, @intCast(count));
                 for (tags, 0..) |_, i| {
                     tags[i] = try self.decode(reader, allocator);
                 }
@@ -313,19 +313,19 @@ pub const NSObjectSet = struct {
             },
             .symbol => {
                 const length = try decodeXlong(reader);
-                var symbol = try allocator.alloc(u8, @intCast(usize, length));
+                const symbol = try allocator.alloc(u8, @intCast(length));
                 _ = try reader.read(symbol);
                 o.* = NSObject{ .symbol = symbol };
             },
             .string => {
                 const length = try decodeXlong(reader);
-                const string_data: []u16 = try allocator.alloc(u16, @intCast(usize, length) / 2);
+                const string_data: []u16 = try allocator.alloc(u16, @as(usize, @intCast(length)) / 2);
                 for (string_data, 0..) |_, i| {
-                    string_data[i] = @intCast(u16, try reader.readByte()) * 256 + try reader.readByte();
+                    string_data[i] = @as(u16, @intCast(try reader.readByte())) * 256 + try reader.readByte();
                 }
                 o.* = NSObject{ .string = string_data };
             },
-            .precedent => o = self.objects.items[@intCast(usize, try decodeXlong(reader))],
+            .precedent => o = self.objects.items[@intCast(try decodeXlong(reader))],
             .nil => o.* = NSObject{ .nil = 0 },
             .smallRect => o.* = NSObject{ .smallRect = .{
                 .top = try reader.readByte(),
@@ -504,7 +504,7 @@ test "Roundtrip encoding/decoding" {
     const writer = fbs.writer();
     const reader = fbs.reader();
 
-    var start = try fbs.getPos();
+    const start = try fbs.getPos();
     try encode(&NSObject{ .array = .{
         .class = &NSObject{ .symbol = &.{ 'a', 'r', 'r' } },
         .slots = &.{

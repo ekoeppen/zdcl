@@ -29,7 +29,7 @@ pub const Arg = struct {
     ) !void {
         switch (self.value) {
             .number => {
-                var arg = iter.next() orelse {
+                const arg = iter.next() orelse {
                     std.log.err("Missing argument for {s}", .{self.name});
                     return error.InvalidArgs;
                 };
@@ -37,7 +37,7 @@ pub const Arg = struct {
                 self.value = .{ .number = try std.fmt.parseInt(i32, arg, 10) };
             },
             .string => {
-                var arg = iter.next() orelse {
+                const arg = iter.next() orelse {
                     std.log.err("Missing argument for {s}", .{self.name});
                     return error.InvalidArgs;
                 };
@@ -65,7 +65,7 @@ pub fn process(
     parsed_args.parameters = std.ArrayList([]const u8).init(allocator);
     var iter = try std.process.argsWithAllocator(allocator);
     _ = iter.skip();
-    var cmd = iter.next() orelse {
+    const cmd = iter.next() orelse {
         std.log.err("No command given", .{});
         return error.InvalidArgument;
     };
@@ -74,7 +74,7 @@ pub fn process(
         if (std.mem.eql(u8, cmd, cmd_def.name)) {
             parsed_args.command = cmd;
             parse_args: while (true) {
-                var arg = iter.next() orelse {
+                const arg = iter.next() orelse {
                     break :parse_args;
                 };
                 const defs = cmd_def.args;
@@ -102,7 +102,7 @@ pub fn process(
         }
     } else {
         std.log.err("Unknown command {s}\n", .{cmd});
-        try usage(common_args, commands, std.io.getStdErr().writer());
+        //try usage(common_args, commands, std.io.getStdErr().writer());
         std.os.exit(1);
     }
 }

@@ -20,11 +20,11 @@ pub fn save(stores_response: *nsof.NSObject, allocator: std.mem.Allocator) !void
         const node = try allocator.create(StoreList.Node);
         if (s.getSlot("name")) |name| {
             node.data.name = try allocator.alloc(u16, name.string.len);
-            std.mem.copy(u16, node.data.name, name.string);
+            std.mem.copyForwards(u16, node.data.name, name.string);
         }
         if (s.getSlot("kind")) |kind| {
             node.data.kind = try allocator.alloc(u16, kind.string.len);
-            std.mem.copy(u16, node.data.kind, kind.string);
+            std.mem.copyForwards(u16, node.data.kind, kind.string);
         }
         if (s.getSlot("signature")) |signature| {
             node.data.signature = nsof.refToInt(signature.immediate).?;
@@ -57,6 +57,6 @@ pub fn setCurrent(store: *Store, allocator: std.mem.Allocator) !void {
     } } };
     try writer.writeByte(2);
     try nsof.encode(info, writer);
-    var dock_packet = try DockPacket.init(.set_current_store, .out, data[0..try fbs.getPos()], allocator);
+    const dock_packet = try DockPacket.init(.set_current_store, .out, data[0..try fbs.getPos()], allocator);
     try event_queue.enqueue(.{ .dock = dock_packet });
 }

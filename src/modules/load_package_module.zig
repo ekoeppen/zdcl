@@ -52,15 +52,15 @@ fn handleDockCommand(packet: DockPacket, data: []const u8, allocator: std.mem.Al
     if (install_fsm.input(packet.command)) |action| {
         switch (action) {
             .send_data => {
-                var dock_packet = try DockPacket.init(.load_package, .out, data, allocator);
+                const dock_packet = try DockPacket.init(.load_package, .out, data, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .install_done => {
-                var dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
+                const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .ack_cancel => {
-                var dock_packet = try DockPacket.init(.op_canceled_ack, .out, &.{}, allocator);
+                const dock_packet = try DockPacket.init(.op_canceled_ack, .out, &.{}, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             else => {},
@@ -71,7 +71,7 @@ fn handleDockCommand(packet: DockPacket, data: []const u8, allocator: std.mem.Al
 pub fn processEvent(event: event_queue.StackEvent, data: []const u8, allocator: std.mem.Allocator) !void {
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
-            var dock_packet = try DockPacket.init(.request_to_install, .out, &.{}, allocator);
+            const dock_packet = try DockPacket.init(.request_to_install, .out, &.{}, allocator);
             try event_queue.enqueue(.{ .dock = dock_packet });
             install_fsm.state = .installing;
         },

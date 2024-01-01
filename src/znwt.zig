@@ -131,9 +131,9 @@ fn commandLoop() void {
 }
 
 fn openPort(port: ?args.Arg, speed: ?args.Arg) !std.os.fd_t {
-    var port_file = if (port) |p| p.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
+    const port_file = if (port) |p| p.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
     const fd = try std.os.open(port_file, std.os.O.RDWR, 0);
-    try serial.setSpeed(fd, if (speed) |s| @intCast(u32, s.value.number) else 38400);
+    try serial.setSpeed(fd, if (speed) |s| @intCast(s.value.number) else 38400);
     return fd;
 }
 
@@ -150,9 +150,9 @@ fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Co
         const fd = try std.os.open(file_name, std.os.O.RDONLY, 0);
         defer std.os.close(fd);
         const file_stat = try std.os.fstat(fd);
-        var package_data = try allocator.alloc(
+        const package_data = try allocator.alloc(
             u8,
-            @intCast(u32, (file_stat.size + 3) & 0xfffffffc),
+            @intCast((file_stat.size + 3) & 0xfffffffc),
         );
         _ = try std.os.read(fd, package_data);
         command = .{ .load = .{ .file = file_name, .data = package_data } };
@@ -172,12 +172,12 @@ pub fn main() anyerror!void {
     defer arena.deinit();
     var parsed_args = try args.process(cli_commands, common_args, arena.allocator());
 
-    var command = try setupCommand(&parsed_args, arena.allocator());
-    var file = try openPort(parsed_args.args.get("port"), parsed_args.args.get("speed"));
+    const command = try setupCommand(&parsed_args, arena.allocator());
+    const file = try openPort(parsed_args.args.get("port"), parsed_args.args.get("speed"));
     defer std.os.close(file);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
     event_queue.init(allocator);
     var readerThread = try std.Thread.spawn(.{}, framing_layer.readerLoop, .{ file, allocator });
     var commandThread = try std.Thread.spawn(.{}, commandLoop, .{});

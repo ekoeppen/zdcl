@@ -169,9 +169,9 @@ const EventDirection = enum {
 };
 
 fn setPacketData(comptime T: type, packet: *T, data: []const u8, allocator: std.mem.Allocator) !void {
-    packet.length = @truncate(u32, data.len);
+    packet.length = @truncate(data.len);
     packet.data = try allocator.alloc(u8, packet.length);
-    std.mem.copy(u8, packet.data, data);
+    std.mem.copyForwards(u8, packet.data, data);
 }
 
 pub const SerialPacket = struct {

@@ -137,7 +137,7 @@ fn input(byte: u8) bool {
             .update_calculated_crc => calculated_crc = crc16.update(byte, calculated_crc),
             .reset_received_crc => received_crc = byte,
             .packet_done => {
-                received_crc = received_crc + 256 * @intCast(u16, byte);
+                received_crc = received_crc + 256 * @as(u16, @intCast(byte));
                 packet_received = true;
             },
         }
@@ -174,7 +174,7 @@ pub fn write(serial_packet: *const event_queue.SerialPacket, file: std.os.fd_t) 
         }
     }
     crc = crc16.update(ETX, crc);
-    _ = try std.os.write(file, &.{ DLE, ETX, @intCast(u8, crc & 0xff), @intCast(u8, crc >> 8) });
+    _ = try std.os.write(file, &.{ DLE, ETX, @intCast(crc & 0xff), @intCast(crc >> 8) });
 }
 
 pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
@@ -190,7 +190,7 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
                     .length = packet_length,
                 };
                 serial_packet.data = try allocator.alloc(u8, serial_packet.length);
-                std.mem.copy(u8, serial_packet.data, packet[0..serial_packet.length]);
+                std.mem.copyForwards(u8, serial_packet.data, packet[0..serial_packet.length]);
                 try event_queue.enqueue(.{ .serial = serial_packet });
             }
         } else |_| {

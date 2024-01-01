@@ -109,7 +109,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
 pub fn processEvent(event: event_queue.StackEvent, allocator: std.mem.Allocator) !void {
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
-            var dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);
+            const dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);
             try event_queue.enqueue(.{ .dock = dock_packet });
             info_fsm.state = .getting_store_names;
         },

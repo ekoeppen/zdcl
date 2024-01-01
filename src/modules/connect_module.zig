@@ -102,11 +102,11 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
     if (connect_fsm.input(packet.command)) |action| {
         switch (action) {
             .request_to_dock => {
-                var dock_packet = try DockPacket.init(.dock, .out, &.{ 0, 0, 0, 1 }, allocator);
+                const dock_packet = try DockPacket.init(.dock, .out, &.{ 0, 0, 0, 1 }, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .desktop_info => {
-                var dock_packet = try DockPacket.init(.desktop_info, .out, &.{
+                const dock_packet = try DockPacket.init(.desktop_info, .out, &.{
                     0, 0, 0, protocol_version, //
                     0, 0, 0, desktop_mac, //
                     0x64, 0x23, 0xef, 0x02, //
@@ -128,12 +128,12 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .which_icons => {
-                std.mem.copy(u8, challenge[0..8], packet.data[4..12]);
-                var dock_packet = try DockPacket.init(.which_icons, .out, &.{ 0, 0, 0, all_icons }, allocator);
+                std.mem.copyForwards(u8, challenge[0..8], packet.data[4..12]);
+                const dock_packet = try DockPacket.init(.which_icons, .out, &.{ 0, 0, 0, all_icons }, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .set_timeout => {
-                var dock_packet = try DockPacket.init(.set_timeout, .out, &.{ 0, 0, 0, dock_timeout }, allocator);
+                const dock_packet = try DockPacket.init(.set_timeout, .out, &.{ 0, 0, 0, dock_timeout }, allocator);
                 try event_queue.enqueue(.{ .dock = dock_packet });
             },
             .password => {
@@ -145,7 +145,7 @@ fn handleDockCommand(packet: DockPacket, allocator: std.mem.Allocator) !void {
                 try event_queue.enqueue(.{ .app = app_event });
             },
             .disconnect => {
-                var app_event = try AppEvent.init(.disconnected, .in, &.{}, allocator);
+                const app_event = try AppEvent.init(.disconnected, .in, &.{}, allocator);
                 try event_queue.enqueue(.{ .app = app_event });
             },
         }

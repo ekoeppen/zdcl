@@ -98,7 +98,7 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                     0;
                 std.log.info("Store: {d} Entry {d}", .{ current_store.data.signature, uniqueId });
                 var b: [128]u8 = undefined;
-                var file = try std.fmt.bufPrint(&b, "entry{d}-{d}.nsof", .{
+                const file = try std.fmt.bufPrint(&b, "entry{d}-{d}.nsof", .{
                     current_store.data.signature, uniqueId,
                 });
                 const fd = try std.os.open(file, std.os.O.CREAT | std.os.O.WRONLY, 0);
@@ -111,7 +111,7 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                     try stores.setCurrent(&next_store.data, allocator);
                     send_fsm.state = .selecting_store;
                 } else {
-                    var dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
+                    const dock_packet = try DockPacket.init(.disconnect, .out, &.{}, allocator);
                     try event_queue.enqueue(.{ .dock = dock_packet });
                     send_fsm.state = .idle;
                     stores.deinit(allocator);
@@ -124,7 +124,7 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
 pub fn processEvent(event: event_queue.StackEvent, soup: []const u8, allocator: std.mem.Allocator) !void {
     switch (event) {
         .app => |app| if (app.direction == .in and app.event == .connected) {
-            var dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);
+            const dock_packet = try DockPacket.init(.get_store_names, .out, &.{}, allocator);
             try event_queue.enqueue(.{ .dock = dock_packet });
             send_fsm.state = .getting_store_names;
         },

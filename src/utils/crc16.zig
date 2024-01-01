@@ -36,7 +36,7 @@ const crcTable = [256]u16{
 };
 
 pub fn update(input: u8, crc: u16) u16 {
-    return (crc >> 8) ^ crcTable[(crc & 0xff) ^ @intCast(u16, input)];
+    return (crc >> 8) ^ crcTable[(crc & 0xff) ^ @as(u16, @intCast(input))];
 }
 
 pub fn calculate(input: []const u8) u16 {
