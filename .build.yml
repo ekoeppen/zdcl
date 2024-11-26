@@ -1,0 +1,15 @@
+image: debian/stable
+secrets:
+  - fa19c627-c19e-46f1-9257-30f9a6f15516
+environment:
+  REPO: zdcl
+sources:
+  - https://git.sr.ht/~ekoeppen/zdcl
+tasks:
+  - mirror-to-github: |
+      if [ "$GIT_REF" == "refs/heads/main" ] && [ -e "$HOME/.token" ]
+      then
+        cd $REPO
+        set +x
+        git push --mirror "https://ekoeppen:$(cat $HOME/.token)@github.com/ekoeppen/$REPO"
+      fi
