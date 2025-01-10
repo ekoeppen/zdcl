@@ -145,7 +145,7 @@ fn input(byte: u8) bool {
     return packet_received;
 }
 
-pub fn write(serial_packet: *const event_queue.SerialPacket, file: std.os.fd_t) !void {
+pub fn write(serial_packet: *const event_queue.SerialPacket, file: std.posix.fd_t) !void {
     var out = [1]u8{0};
     var crc: u16 = 0;
     framingFsm.state = .outside_packet;
@@ -154,18 +154,18 @@ pub fn write(serial_packet: *const event_queue.SerialPacket, file: std.os.fd_t) 
             switch (action) {
                 .start_packet => {
                     crc = crc16.update(byte, crc);
-                    _ = try std.os.write(file, &.{ SYN, DLE, STX, byte });
+                    _ = try std.posix.write(file, &.{ SYN, DLE, STX, byte });
                 },
                 .add_byte => {
                     out[0] = byte;
                     crc = crc16.update(byte, crc);
-                    _ = try std.os.write(file, &out);
+                    _ = try std.posix.write(file, &out);
                 },
                 .add_dle => {
                     out[0] = DLE;
                     crc = crc16.update(byte, crc);
-                    _ = try std.os.write(file, &out);
-                    _ = try std.os.write(file, &out);
+                    _ = try std.posix.write(file, &out);
+                    _ = try std.posix.write(file, &out);
                 },
                 .update_calculated_crc => {},
                 .reset_received_crc => {},
@@ -174,13 +174,13 @@ pub fn write(serial_packet: *const event_queue.SerialPacket, file: std.os.fd_t) 
         }
     }
     crc = crc16.update(ETX, crc);
-    _ = try std.os.write(file, &.{ DLE, ETX, @intCast(crc & 0xff), @intCast(crc >> 8) });
+    _ = try std.posix.write(file, &.{ DLE, ETX, @intCast(crc & 0xff), @intCast(crc >> 8) });
 }
 
-pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
+pub fn readerLoop(file: std.posix.fd_t, allocator: std.mem.Allocator) !void {
     var serial_buffer: [1]u8 = undefined;
     read_loop: while (true) {
-        if (std.os.read(file, &serial_buffer)) |num_bytes| {
+        if (std.posix.read(file, &serial_buffer)) |num_bytes| {
             if (num_bytes == 0) {
                 continue :read_loop;
             }
@@ -199,7 +199,7 @@ pub fn readerLoop(file: std.os.fd_t, allocator: std.mem.Allocator) !void {
     }
 }
 
-pub fn processEvent(event: event_queue.StackEvent, file: std.os.fd_t) !void {
+pub fn processEvent(event: event_queue.StackEvent, file: std.posix.fd_t) !void {
     switch (event) {
         .serial => |serial| if (serial.direction == .out) {
             try write(&serial, file);

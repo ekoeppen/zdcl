@@ -1,9 +1,9 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const stderr = std.io.getStdErr().writer();
     const target = b.standardTargetOptions(.{});
-    const target_info = try std.zig.system.NativeTargetInfo.detect(target);
     const mode = b.standardOptimizeOption(.{});
 
     const znwt = b.addExecutable(.{
@@ -29,16 +29,17 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = mode,
     });
-    const serial_path = switch (target_info.target.os.tag) {
+    const serial_path = switch (builtin.target.os.tag) {
         .linux => "src/utils/serial_linux.zig",
         .macos => "src/utils/serial_macos.zig",
         else => {
-            try stderr.print("\nUnsupported target: {}\n", .{target_info.target.os.tag});
+            try stderr.print("\nUnsupported target: {}\n", .{builtin.target.os.tag});
             return error.NotSupported;
         },
     };
-    //const serial_module = b.addModule("serial", .{ .source_file = .{ .path = serial_path } });
-    znwt.addModule("serial", b.createModule(.{ .source_file = .{ .path = serial_path } }));
+    const serial_module = b.addModule("serial", .{ .root_source_file = .{ .path = serial_path } });
+    //znwt.addModule("serial", b.createModule(.{ .source_file = .{ .path = serial_path } }));
+    znwt.root_module.addImport("serial", serial_module);
 
     const znwt_test_step = b.step("test", "Run unit tests for znwt");
     znwt_test_step.dependOn(&znwt_tests.step);

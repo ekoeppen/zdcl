@@ -101,7 +101,7 @@ const LogLayer = struct {
 
 var log_layer = LogLayer{ .enabled = false };
 
-fn processStackEvents(file: std.os.fd_t, command: Command, allocator: std.mem.Allocator) !void {
+fn processStackEvents(file: std.posix.fd_t, command: Command, allocator: std.mem.Allocator) !void {
     while (event_queue.dequeue()) |event| {
         log_layer.processEvent(event);
         try framing_layer.processEvent(event, file);
@@ -130,9 +130,9 @@ fn commandLoop() void {
     }
 }
 
-fn openPort(port: ?args.Arg, speed: ?args.Arg) !std.os.fd_t {
+fn openPort(port: ?args.Arg, speed: ?args.Arg) !std.posix.fd_t {
     const port_file = if (port) |p| p.value.string else if (builtin.os.tag == .windows) "COM1" else "/dev/ttyUSB0";
-    const fd = try std.os.open(port_file, std.os.O.RDWR, 0);
+    const fd = try std.posix.open(port_file, .{ .ACCMODE = .RDWR}, 0);
     try serial.setSpeed(fd, if (speed) |s| @intCast(s.value.number) else 38400);
     return fd;
 }
@@ -141,20 +141,20 @@ fn setupCommand(parsed_args: *args.ParsedArgs, allocator: std.mem.Allocator) !Co
     var command: Command = .{ .info = true };
     if (std.mem.eql(u8, parsed_args.command, cli_commands.help.name)) {
         std.log.info("Usage...", .{});
-        std.os.exit(0);
+        std.process.exit(0);
     } else if (std.mem.eql(u8, parsed_args.command, cli_commands.info.name)) {
         command = .{ .info = true };
         connect_module.session_type = .setting_up;
     } else if (std.mem.eql(u8, parsed_args.command, cli_commands.load.name)) {
         const file_name = parsed_args.parameters.items[0];
-        const fd = try std.os.open(file_name, std.os.O.RDONLY, 0);
-        defer std.os.close(fd);
-        const file_stat = try std.os.fstat(fd);
+        const fd = try std.posix.open(file_name, .{ .ACCMODE = .RDONLY }, 0);
+        defer std.posix.close(fd);
+        const file_stat = try std.posix.fstat(fd);
         const package_data = try allocator.alloc(
             u8,
             @intCast((file_stat.size + 3) & 0xfffffffc),
         );
-        _ = try std.os.read(fd, package_data);
+        _ = try std.posix.read(fd, package_data);
         command = .{ .load = .{ .file = file_name, .data = package_data } };
         connect_module.session_type = .load_package;
     } else if (std.mem.eql(u8, parsed_args.command, cli_commands.soup_export.name)) {
@@ -174,7 +174,7 @@ pub fn main() anyerror!void {
 
     const command = try setupCommand(&parsed_args, arena.allocator());
     const file = try openPort(parsed_args.args.get("port"), parsed_args.args.get("speed"));
-    defer std.os.close(file);
+    defer std.posix.close(file);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -187,5 +187,5 @@ pub fn main() anyerror!void {
     commandThread.join();
     _ = gpa.deinit();
     std.log.info("Done.", .{});
-    std.os.exit(0);
+    std.posix.exit(0);
 }

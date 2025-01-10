@@ -103,7 +103,7 @@ pub fn process(
     } else {
         std.log.err("Unknown command {s}\n", .{cmd});
         //try usage(common_args, commands, std.io.getStdErr().writer());
-        std.os.exit(1);
+        std.process.exit(1);
     }
 }
 

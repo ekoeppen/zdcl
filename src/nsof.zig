@@ -24,11 +24,11 @@ const cli_commands = .{
 };
 
 fn decode(file: []const u8, allocator: std.mem.Allocator) !void {
-    const fd = try std.os.open(file, std.os.O.RDONLY, 0);
-    defer std.os.close(fd);
-    const file_stat = try std.os.fstat(fd);
+    const fd = try std.posix.open(file, .{ .ACCMODE = .RDONLY }, 0);
+    defer std.posix.close(fd);
+    const file_stat = try std.posix.fstat(fd);
     const nsof_data = try allocator.alloc(u8, @intCast(file_stat.size));
-    _ = try std.os.read(fd, nsof_data);
+    _ = try std.posix.read(fd, nsof_data);
     hexdump.debug(nsof_data);
     var fbs = std.io.fixedBufferStream(nsof_data);
     var reader = fbs.reader();

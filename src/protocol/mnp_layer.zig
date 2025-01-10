@@ -106,7 +106,7 @@ fn processSerial(packet: SerialPacket, allocator: std.mem.Allocator) !void {
             .handle_link_request => try handleLinkRequest(packet, allocator),
             .handle_link_transfer => try handleLinkTransfer(packet, allocator),
             .handle_link_acknowledgement => try handleLinkAcknowledgement(packet),
-            .close_connection => std.os.exit(0),
+            .close_connection => std.process.exit(0),
         }
     }
 }

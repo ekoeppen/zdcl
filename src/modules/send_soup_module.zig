@@ -101,9 +101,9 @@ fn handleDockCommand(packet: DockPacket, soup: []const u8, allocator: std.mem.Al
                 const file = try std.fmt.bufPrint(&b, "entry{d}-{d}.nsof", .{
                     current_store.data.signature, uniqueId,
                 });
-                const fd = try std.os.open(file, std.os.O.CREAT | std.os.O.WRONLY, 0);
-                defer std.os.close(fd);
-                _ = try std.os.write(fd, packet.data);
+                const fd = try std.posix.open(file, .{ .ACCMODE = .RDWR}, 0);
+                defer std.posix.close(fd);
+                _ = try std.posix.write(fd, packet.data);
             },
             .backup_done => {
                 if (current_store.next) |next_store| {
